@@ -108,7 +108,7 @@ Integrated search-and-rescue detection system combining acoustic detection, Wi-F
     - Implement in-memory fallback when localStorage is unavailable
     - _Requirements: 5.1, 5.2, 5.3, 5.5, 2.1_
 
-  - [ ] 6.2 Implement location sharing via Web Share API
+  - [x] 6.2 Implement location sharing via Web Share API
     - Format share text: timestamp, accuracy, note, coordinates, Google Maps link
     - Fallback to clipboard copy with 2-second confirmation when Web Share unavailable
     - Handle empty log case with appropriate message
@@ -127,7 +127,7 @@ Integrated search-and-rescue detection system combining acoustic detection, Wi-F
     - _Requirements: 5.4_
 
 - [ ] 7. Implement mobile app connectivity and sync
-  - [ ] 7.1 Implement WebSocket sync engine for backend communication
+  - [x] 7.1 Implement WebSocket sync engine for backend communication
     - Create `SyncEngine` class: connect on port 9001 with 5-second timeout
     - Subscribe to `cali/zone/+/csi`, display alerts in notification panel (max 50 retained)
     - Retry every 5 seconds for up to 10 attempts, then show persistent offline indicator
