@@ -41,10 +41,8 @@ backend/data/
 Thumbs.db
 desktop.ini
 
-# ESP-IDF build
-firmware/build/
-firmware/sdkconfig
-firmware/sdkconfig.old
+# ESP-IDF firmware (excluido para mantenerse privado)
+firmware/
 
 # Logs
 *.log
