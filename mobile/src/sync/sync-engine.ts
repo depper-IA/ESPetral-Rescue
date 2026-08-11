@@ -134,6 +134,11 @@ export class SyncEngine {
     return this.alerts;
   }
 
+  /** Retorna el tiempo de gracia de reconexión (ms) */
+  getReconnectGrace(): number {
+    return this.reconnectGrace;
+  }
+
   /** Retorna la cantidad de reintentos realizados */
   getRetryCount(): number {
     return this.retryCount;

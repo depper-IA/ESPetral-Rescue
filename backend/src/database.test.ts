@@ -6,7 +6,7 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { initializeDatabase, purgeExpiredData, stopPurgeDaemon } from './database.js';
-import type Database from 'better-sqlite3-multiple-ciphers';
+import type Database from 'better-sqlite3';
 
 describe('database', () => {
   let db: Database.Database;

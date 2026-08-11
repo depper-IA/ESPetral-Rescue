@@ -82,8 +82,6 @@ describe('formatShareText', () => {
 // --- Tests unitarios: shareLocation ---
 
 describe('shareLocation', () => {
-  const originalNavigator = globalThis.navigator;
-
   beforeEach(() => {
     // Resetear navigator mocks
     vi.stubGlobal('navigator', {

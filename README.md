@@ -28,7 +28,7 @@ ESPetral Rescue es un sistema de detección multicomponente diseñado para ayuda
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  ZONA DE ESCOMBROS                                          │
-│  Nodos ESP32-C6 → Detección de movimiento Wi-Fi CSI (20 fps)│
+│  Nodos ESP32 (S3/C6/C3) → Detección de movimiento Wi-Fi CSI │
 └──────────────────────┬──────────────────────────────────────┘
                        │ MQTT sobre Wi-Fi local
 ┌──────────────────────▼──────────────────────────────────────┐
@@ -56,11 +56,12 @@ ESPetral Rescue es un sistema de detección multicomponente diseñado para ayuda
 
 ## Componentes
 
-### `firmware/` — Firmware ESP32-C6 (C · ESP-IDF)
-- Transmisión CSI ping a 20 fps y cálculo de probabilidad de movimiento
-- Publicación MQTT cada 2s con búfer circular para resiliencia sin conexión
-- Indicador LED con histéresis y gestión de energía en suspensión ligera (<80mA promedio)
-- Actualizaciones de firmware OTA mediante S3 y CloudFront
+### `firmware/` — Firmware Multi-Dispositivo (ESP32-S3 / ESP32-C6 / ESP32-C3 en C · ESP-IDF)
+- Código agnóstico de hardware compatible con **ESP32-S3** (Xtensa dual-core de alto rendimiento), **ESP32-C6** (Wi-Fi 6 / RISC-V) y **ESP32-C3** (solución económica accesible).
+- Transmisión CSI ping a 20 fps y cálculo de probabilidad de movimiento en tiempo real.
+- Publicación MQTT cada 2s con búfer circular para resiliencia sin conexión.
+- Indicador LED con histéresis y gestión de energía en suspensión ligera (<80mA promedio).
+- Actualizaciones de firmware OTA mediante S3 y CloudFront.
 
 ### `backend/` — Servidor Local (TypeScript · Node.js)
 - Broker MQTT Aedes con autenticación PSK y validación de esquemas
@@ -88,7 +89,7 @@ ESPetral Rescue es un sistema de detección multicomponente diseñado para ayuda
 
 | Componente | Hardware |
 |-----------|----------|
-| Nodos de detección | ESP32-C6 Super Mini (~$38.900 COP / ~$10 USD) |
+| Nodos de detección | ESP32-S3, ESP32-C6 o ESP32-C3 Super Mini (~$35.000–$45.000 COP / ~$8–$12 USD) |
 | Coordinación | Computador portátil con Node.js 20+ y zona de cobertura Wi-Fi (Hotspot) |
 | Equipo de campo | Cualquier teléfono Android o iOS con navegador web moderno |
 | Red | Red Wi-Fi local únicamente — no requiere internet para operación en campo |
@@ -118,8 +119,9 @@ pnpm run dev
 
 ```bash
 cd firmware
-idf.py set-target esp32c6
-idf.py menuconfig   # Configurar NVS: zone_id, mqtt_host, mqtt_token
+# Seleccionar el chip objetivo disponible (ESP32-S3 es la opción preferida/donada):
+idf.py set-target esp32s3   # opciones alternativas: esp32c6 | esp32c3
+idf.py menuconfig            # Configurar NVS: zone_id, mqtt_host, mqtt_token
 idf.py build flash monitor
 ```
 
@@ -172,7 +174,7 @@ pnpm run deploy
 ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white)
 ![MQTT](https://img.shields.io/badge/MQTT-660066?style=flat-square&logo=mqtt&logoColor=white)
-![ESP32](https://img.shields.io/badge/ESP32--C6-E7352C?style=flat-square&logo=espressif&logoColor=white)
+![ESP32](https://img.shields.io/badge/ESP32--S3%2FC6%2FC3-E7352C?style=flat-square&logo=espressif&logoColor=white)
 ![AWS Lambda](https://img.shields.io/badge/AWS_Lambda-FF9900?style=flat-square&logo=awslambda&logoColor=white)
 ![DynamoDB](https://img.shields.io/badge/DynamoDB-4053D6?style=flat-square&logo=amazondynamodb&logoColor=white)
 ![CloudFront](https://img.shields.io/badge/CloudFront-FF9900?style=flat-square&logo=amazonaws&logoColor=white)

@@ -7,7 +7,7 @@
  * Requisitos: 6.3 (almacenamiento de telemetría), 11.1 (scoring por zona)
  */
 
-import Database from 'better-sqlite3-multiple-ciphers';
+import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
