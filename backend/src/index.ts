@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Punto de entrada del backend
+ * ESPetral Rescue — Punto de entrada del backend
  *
  * Inicializa todos los componentes del sistema:
  * - Base de datos SQLite con SQLCipher
@@ -27,7 +27,7 @@ const DB_KEY = process.env.CALI_DB_KEY;
 const MQTT_TOKEN = process.env.CALI_MQTT_TOKEN || 'internal-relay-token';
 
 async function main() {
-  console.log('[cali] Iniciando CALI Rescue System...');
+  console.log('[espetral] Iniciando ESPetral Rescue...');
 
   // 1. Inicializar base de datos
   const db = initializeDatabase({

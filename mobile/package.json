@@ -1,7 +1,7 @@
 {
-  "name": "cali-rescue-mobile",
+  "name": "espetral-rescue-mobile",
   "version": "0.1.0",
-  "description": "CALI Rescue System — Aplicación móvil PWA para equipos de campo",
+  "description": "ESPetral Rescue — Aplicación móvil PWA para equipos de campo",
   "private": true,
   "type": "module",
   "scripts": {

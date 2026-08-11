@@ -1,5 +1,5 @@
 /**
- * Componente raíz de la aplicación CALI Rescue.
+ * Componente raíz de la aplicación ESPetral Rescue.
  *
  * Integra las 5 áreas funcionales principales:
  * 1. GPS: captura manual vía navigator.geolocation, persistencia encriptada
@@ -309,7 +309,7 @@ export function App(): ReactNode {
   return (
     <div className="cali-app">
       <header className="cali-header">
-        <h1>CALI Rescue</h1>
+        <h1>ESPetral Rescue</h1>
         <p className="cali-tagline">Herramienta de campo para búsqueda y rescate</p>
         <SyncIndicator state={syncState} persistentOffline={persistentOffline} />
       </header>

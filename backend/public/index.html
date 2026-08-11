@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CALI Rescue — Panel de Control</title>
+  <title>ESPetral Rescue — Panel de Control</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     * {
@@ -256,7 +256,7 @@
 </head>
 <body>
   <header>
-    <h1>🔍 CALI Rescue — Mapa de Zonas</h1>
+    <h1>Mapa de Zonas — ESPetral Rescue</h1>
     <div class="status-indicator">
       <div class="status-dot" id="wsStatus"></div>
       <span id="wsStatusText">Conectado</span>
@@ -276,7 +276,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     /**
-     * CALI Rescue System — Panel de Control (Dashboard)
+     * ESPetral Rescue — Panel de Control (Dashboard)
      *
      * Muestra todas las zonas registradas como marcadores en un mapa Leaflet.js.
      * Colores según motion_probability:
@@ -360,7 +360,7 @@
 
       return `
         <div class="zone-popup">
-          <h3>📍 ${zone.name || zone.id}</h3>
+          <h3>${zone.name || zone.id}</h3>
           ${probDisplay}
           ${lastUpdate}
         </div>

@@ -147,7 +147,7 @@ beforeEach(() => {
 describe('App', () => {
   it('debe renderizar el título y el subtítulo del header', () => {
     render(<App />, { wrapper: NoStrictMode });
-    expect(screen.getByRole('heading', { name: /CALI Rescue/i, level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /ESPetral Rescue/i, level: 1 })).toBeInTheDocument();
     expect(screen.getByText(/Herramienta de campo para búsqueda y rescate/i)).toBeInTheDocument();
   });
 

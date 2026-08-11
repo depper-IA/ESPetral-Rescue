@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Tests del servidor dashboard
+ * ESPetral Rescue — Tests del servidor dashboard
  *
  * Verifica que el servidor Express sirve el dashboard HTML,
  * la API de zonas retorna datos correctos, y los marcadores
@@ -40,7 +40,7 @@ describe('Dashboard Server', () => {
       const response = await fetch(`http://localhost:${TEST_PORT}/`);
       const html = await response.text();
       expect(html).toContain('leaflet');
-      expect(html).toContain('CALI Rescue');
+      expect(html).toContain('ESPetral Rescue');
       expect(html).toContain('Mapa de Zonas');
     });
   });

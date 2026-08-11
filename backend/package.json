@@ -1,7 +1,7 @@
 {
-  "name": "cali-rescue-backend",
+  "name": "espetral-rescue-backend",
   "version": "0.1.0",
-  "description": "CALI Rescue System — Local backend with MQTT broker, scoring engine, and real-time dashboard",
+  "description": "ESPetral Rescue — Local backend with MQTT broker, scoring engine, and real-time dashboard",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
