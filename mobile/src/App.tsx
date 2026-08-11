@@ -39,9 +39,9 @@ function resolveBackendWsUrl(): string {
   }
   // Fallback razonable para dev local
   if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
-    return 'wss://localhost:9002';
+    return 'wss://localhost:9001';
   }
-  return 'ws://localhost:9002';
+  return 'ws://localhost:9001';
 }
 
 /** Mapea estado de conexión a etiqueta legible para UI */

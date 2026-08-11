@@ -1,11 +1,12 @@
 /**
  * CALI Rescue System — Motor de sincronización WebSocket
  *
- * Conecta la app móvil al relay WebSocket del backend (puerto 9002).
+ * Conecta la app móvil al relay WebSocket del backend (puerto 9001).
  * Protocolo JSON (no MQTT directo): recibe alertas CSI de zonas,
- * gestiona reconexión con reintentos, y mantiene un buffer acotado de alertas.
+ * acknowledgments de sincronización, gestiona reconexión con reintentos,
+ * y mantiene un buffer acotado de alertas.
  *
- * Requisitos: 8.1, 8.2, 8.3, 8.4, 8.5
+ * Requisitos: 8.1, 8.2, 8.3, 8.4, 8.5, 13.2, 13.5
  */
 
 // --- Tipos ---
@@ -24,6 +25,14 @@ export interface ZoneAlert {
 export interface RelayMessage {
   type: string;
   payload: unknown;
+}
+
+/** Acknowledgment de sincronización recibido del backend (`cali/sync/ack`) */
+export interface LocationSyncAck {
+  /** IDs de entradas confirmadas por el backend */
+  acknowledged_ids: string[];
+  /** Errores de validación por entrada, si los hubo */
+  errors: { id: string; reason: string }[];
 }
 
 /** Estado de conexión del motor de sincronización */
@@ -53,6 +62,8 @@ export interface SyncEngineListener {
   onAlert?: (alert: ZoneAlert) => void;
   /** Invocado cuando se activa el indicador offline persistente (10 reintentos agotados) */
   onPersistentOffline?: (offline: boolean) => void;
+  /** Invocado cuando se recibe un acknowledgment de sincronización de ubicaciones */
+  onSyncAck?: (ack: LocationSyncAck) => void;
 }
 
 // --- Constantes por defecto ---
@@ -65,6 +76,9 @@ const DEFAULT_RECONNECT_GRACE = 2000;
 
 /** Patrón para identificar mensajes CSI de zonas: cali/zone/{id}/csi */
 const CSI_TOPIC_PATTERN = /^cali\/zone\/[^/]+\/csi$/;
+
+/** Tipo de mensaje para acknowledgment de sincronización de ubicaciones */
+const SYNC_ACK_TYPE = 'cali/sync/ack';
 
 // --- Clase SyncEngine ---
 
@@ -243,10 +257,26 @@ export class SyncEngine {
 
     if (!message.type || typeof message.type !== 'string') return;
 
-    // Solo procesamos mensajes CSI de zonas
     if (CSI_TOPIC_PATTERN.test(message.type)) {
       this.handleCsiMessage(message);
+      return;
     }
+
+    if (message.type === SYNC_ACK_TYPE) {
+      this.handleSyncAck(message);
+    }
+  }
+
+  private handleSyncAck(message: RelayMessage): void {
+    const payload = message.payload as Partial<LocationSyncAck> | null;
+    if (!payload || typeof payload !== 'object') return;
+
+    const ack: LocationSyncAck = {
+      acknowledged_ids: Array.isArray(payload.acknowledged_ids) ? payload.acknowledged_ids : [],
+      errors: Array.isArray(payload.errors) ? payload.errors : [],
+    };
+
+    this.listener.onSyncAck?.(ack);
   }
 
   private handleCsiMessage(message: RelayMessage): void {

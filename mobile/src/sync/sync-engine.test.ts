@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fc from 'fast-check';
-import { SyncEngine, type ZoneAlert, type SyncEngineOptions } from './sync-engine.js';
+import { SyncEngine, type ZoneAlert, type SyncEngineOptions, type LocationSyncAck } from './sync-engine.js';
 
 // --- Mock de WebSocket global ---
 
@@ -66,7 +66,7 @@ class MockWebSocket {
 
 function defaultOptions(overrides?: Partial<SyncEngineOptions>): SyncEngineOptions {
   return {
-    url: 'ws://localhost:9002',
+    url: 'ws://localhost:9001',
     connectionTimeout: 5000,
     retryInterval: 5000,
     maxRetries: 10,
@@ -111,7 +111,7 @@ describe('SyncEngine', () => {
 
       const ws = MockWebSocket.getLastInstance();
       expect(ws).toBeDefined();
-      expect(ws!.url).toBe('ws://localhost:9002');
+      expect(ws!.url).toBe('ws://localhost:9001');
     });
 
     it('debe cambiar estado a connecting durante la conexión', () => {
@@ -334,6 +334,69 @@ describe('SyncEngine', () => {
       engine = new SyncEngine(defaultOptions());
       const result = engine.send('cali/sync/entries', { entries: [] });
       expect(result).toBe(false);
+    });
+  });
+
+  describe('Recepción de acknowledgment de sync (Req 13.2, 13.5)', () => {
+    beforeEach(() => {
+      engine = new SyncEngine(defaultOptions());
+      engine.connect();
+      MockWebSocket.getLastInstance()!.simulateOpen();
+    });
+
+    it('debe invocar onSyncAck con los IDs confirmados al recibir cali/sync/ack', () => {
+      const ackSpy = vi.fn();
+      engine.setListener({ onSyncAck: ackSpy });
+
+      const ack: LocationSyncAck = { acknowledged_ids: ['id-1', 'id-2'], errors: [] };
+      MockWebSocket.getLastInstance()!.simulateMessage(
+        JSON.stringify({ type: 'cali/sync/ack', payload: ack }),
+      );
+
+      expect(ackSpy).toHaveBeenCalledWith(ack);
+    });
+
+    it('debe pasar un array vacío de errores si el payload no lo incluye', () => {
+      const ackSpy = vi.fn();
+      engine.setListener({ onSyncAck: ackSpy });
+
+      MockWebSocket.getLastInstance()!.simulateMessage(
+        JSON.stringify({ type: 'cali/sync/ack', payload: { acknowledged_ids: ['id-1'] } }),
+      );
+
+      expect(ackSpy).toHaveBeenCalledWith({ acknowledged_ids: ['id-1'], errors: [] });
+    });
+
+    it('no debe invocar onAlert cuando llega un ack (no es un mensaje CSI)', () => {
+      const alertSpy = vi.fn();
+      engine.setListener({ onAlert: alertSpy });
+
+      MockWebSocket.getLastInstance()!.simulateMessage(
+        JSON.stringify({ type: 'cali/sync/ack', payload: { acknowledged_ids: [] } }),
+      );
+
+      expect(alertSpy).not.toHaveBeenCalled();
+    });
+
+    it('no debe lanzar error si no hay listener onSyncAck registrado', () => {
+      engine.setListener({});
+      expect(() => {
+        MockWebSocket.getLastInstance()!.simulateMessage(
+          JSON.stringify({ type: 'cali/sync/ack', payload: { acknowledged_ids: [] } }),
+        );
+      }).not.toThrow();
+    });
+
+    it('debe ignorar acks con payload malformado sin lanzar error', () => {
+      const ackSpy = vi.fn();
+      engine.setListener({ onSyncAck: ackSpy });
+
+      expect(() => {
+        MockWebSocket.getLastInstance()!.simulateMessage(
+          JSON.stringify({ type: 'cali/sync/ack', payload: null }),
+        );
+      }).not.toThrow();
+      expect(ackSpy).not.toHaveBeenCalled();
     });
   });
 
