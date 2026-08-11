@@ -49,6 +49,10 @@ firmware/
 AGENTS.md
 REGLAS_IMPORTANTES.md
 
+# HTTPS dev certs (mkcert, generated per-machine)
+mobile/*.pem
+mobile/.env.local
+
 # Logs
 *.log
 npm-debug.log*

@@ -1,6 +1,31 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// HTTPS dev certs generated via mkcert for LAN access.
+// Regenerate locally with: mkcert 192.168.1.3 localhost
+const httpsCert = fs.existsSync(path.resolve(__dirname, '192.168.1.3+1.pem'))
+  ? fs.readFileSync(path.resolve(__dirname, '192.168.1.3+1.pem'))
+  : undefined;
+const httpsKey = fs.existsSync(path.resolve(__dirname, '192.168.1.3+1-key.pem'))
+  ? fs.readFileSync(path.resolve(__dirname, '192.168.1.3+1-key.pem'))
+  : undefined;
+
+const httpsConfig = httpsCert && httpsKey ? { cert: httpsCert, key: httpsKey } : undefined;
+
+// Proxy /ws to backend ws-relay. Allows the mobile PWA (HTTPS) to talk to
+// the backend (HTTP WS relay on 9001) without mixed-content blocks.
+const wsRelayProxy = {
+  target: 'ws://localhost:9001',
+  ws: true,
+  changeOrigin: true,
+  rewrite: (p: string) => p.replace(/^\/ws/, ''),
+};
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -9,9 +34,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'CALI Rescue — Herramienta de Campo',
-        short_name: 'CALI Rescue',
-        description: 'Aplicación de campo para búsqueda y rescate',
+        name: 'ESPetral Rescue - Herramienta de Campo',
+        short_name: 'ESPetral Rescue',
+        description: 'Aplicacion de campo para busqueda y rescate',
         start_url: '/',
         display: 'standalone',
         theme_color: '#1a1a2e',
@@ -33,4 +58,18 @@ export default defineConfig({
       },
     }),
   ],
+  server: {
+    host: true,
+    ...(httpsConfig ? { https: httpsConfig } : {}),
+    proxy: {
+      '/ws': wsRelayProxy,
+    },
+  },
+  preview: {
+    host: true,
+    ...(httpsConfig ? { https: httpsConfig } : {}),
+    proxy: {
+      '/ws': wsRelayProxy,
+    },
+  },
 });
