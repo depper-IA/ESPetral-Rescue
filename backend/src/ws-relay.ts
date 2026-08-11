@@ -1,16 +1,19 @@
 /**
  * CALI Rescue System — WebSocket Relay para conexiones de apps móviles
  *
- * Servidor WebSocket en puerto 9002 que conecta apps móviles al broker MQTT.
- * Protocolo JSON (no MQTT) para sincronización de ubicaciones y retransmisión
- * de alertas CSI a clientes móviles suscritos.
+ * Servidor WebSocket en puerto 9001 (según design.md: "Mobile App → Backend |
+ * WebSocket Secure | 9001") que conecta apps móviles al broker MQTT.
+ * Protocolo JSON (no MQTT) para sincronización de ubicaciones, reportes
+ * acústicos y retransmisión de alertas CSI a clientes móviles suscritos.
  *
  * Funcionalidades:
  * - Recibe batches de ubicación (`cali/sync/entries`), valida, deduplica y almacena en SQLite
  * - Envía acknowledgments (`cali/sync/ack`) con IDs confirmados
+ * - Recibe reportes acústicos (`cali/sync/acoustic`), resuelve la zona por proximidad GPS,
+ *   los almacena en `acoustic_reports` y notifica para recalcular el scoring
  * - Retransmite mensajes `cali/zone/+/csi` a clientes móviles suscritos
  *
- * Requisitos: 8.1, 8.2, 13.1, 13.2
+ * Requisitos: 8.1, 8.2, 11.5, 13.1, 13.2
  */
 
 import { WebSocketServer, WebSocket } from 'ws';
@@ -19,12 +22,13 @@ import type { IncomingMessage } from 'http';
 import type Database from 'better-sqlite3';
 import type Aedes from 'aedes';
 import mqtt from 'mqtt';
+import { approximateDistanceMeters } from './scoring-engine.js';
 import type { LocationSyncBatch, LocationSyncAck, LocationEntry } from './types.js';
 
 // --- Constantes ---
 
-/** Puerto por defecto para el relay WebSocket de apps móviles */
-export const DEFAULT_RELAY_PORT = 9002;
+/** Puerto por defecto para el relay WebSocket de apps móviles (design.md: 9001) */
+export const DEFAULT_RELAY_PORT = 9001;
 
 /** Máximo de entradas por batch de sincronización */
 export const MAX_BATCH_SIZE = 50;
@@ -34,6 +38,12 @@ const SYNC_ENTRIES_TOPIC = 'cali/sync/entries';
 
 /** Tópico para acknowledgment de sincronización (salida) */
 const SYNC_ACK_TOPIC = 'cali/sync/ack';
+
+/** Tópico para envío de reportes acústicos (entrada) */
+const SYNC_ACOUSTIC_TOPIC = 'cali/sync/acoustic';
+
+/** Tópico para acknowledgment de reportes acústicos (salida) */
+const SYNC_ACOUSTIC_ACK_TOPIC = 'cali/sync/acoustic_ack';
 
 /** Patrón para tópicos CSI de zonas */
 const CSI_TOPIC_PREFIX = 'cali/zone/';
@@ -61,10 +71,38 @@ export interface CsiRelayMessage {
   timestamp: string;
 }
 
+/**
+ * Reporte acústico recibido desde la app móvil (sin zone_id: se resuelve
+ * server-side por proximidad GPS a partir de lat/lon).
+ */
+export interface AcousticReportInput {
+  /** UUID generado en el dispositivo móvil */
+  id: string;
+  /** Identificador local del dispositivo (no es un token de autenticación) */
+  device_token: string;
+  /** Cantidad de picos filtrados en el patrón detectado */
+  peak_count: number;
+  /** Intervalo medio entre picos en ms */
+  mean_interval_ms: number;
+  /** Confianza de la detección [0,1] */
+  confidence: number;
+  /** Latitud del dispositivo al momento del reporte, o null si no hay fix GPS */
+  lat: number | null;
+  /** Longitud del dispositivo al momento del reporte, o null si no hay fix GPS */
+  lon: number | null;
+  /** Timestamp ISO 8601 del reporte */
+  reported_at: string;
+}
+
+/** Reporte acústico ya resuelto a una zona, entregado al callback onAcousticReport */
+export interface ResolvedAcousticReport extends AcousticReportInput {
+  zone_id: string;
+}
+
 // --- Opciones de configuración ---
 
 export interface WsRelayOptions {
-  /** Puerto HTTP para el servidor WebSocket (default: 9002) */
+  /** Puerto HTTP para el servidor WebSocket (default: 9001) */
   port?: number;
   /** Instancia de base de datos SQLite para almacenamiento */
   db: Database.Database;
@@ -76,6 +114,8 @@ export interface WsRelayOptions {
   validTokens?: Set<string>;
   /** Callback invocado cuando se almacena un nuevo reporte de campo (ubicación sincronizada) */
   onFieldReport?: (entry: { id: string; lat: number; lon: number; note: string; captured_at: string }) => void;
+  /** Callback invocado cuando se almacena un nuevo reporte acústico, para disparar el recálculo del scoring */
+  onAcousticReport?: (report: ResolvedAcousticReport) => void;
 }
 
 // --- Interfaz del relay ---
@@ -253,16 +293,151 @@ export function storeLocationEntries(
   return { storedIds, duplicateIds };
 }
 
+// --- Validación y almacenamiento de reportes acústicos ---
+
+/**
+ * Valida un reporte acústico individual recibido desde la app móvil.
+ * Retorna el reporte parseado si es válido, o un mensaje de error.
+ */
+export function validateAcousticReport(payload: unknown): {
+  valid: boolean;
+  report: AcousticReportInput | null;
+  error: string | null;
+} {
+  if (typeof payload !== 'object' || payload === null) {
+    return { valid: false, report: null, error: 'El reporte acústico no es un objeto válido' };
+  }
+
+  const p = payload as Record<string, unknown>;
+
+  if (typeof p.id !== 'string' || p.id.length === 0) {
+    return { valid: false, report: null, error: 'Campo id ausente o inválido' };
+  }
+
+  if (typeof p.device_token !== 'string' || p.device_token.length === 0) {
+    return { valid: false, report: null, error: 'Campo device_token ausente o inválido' };
+  }
+
+  if (typeof p.peak_count !== 'number' || !Number.isInteger(p.peak_count) || p.peak_count < 1) {
+    return { valid: false, report: null, error: 'Campo peak_count ausente o inválido' };
+  }
+
+  if (typeof p.mean_interval_ms !== 'number' || !Number.isFinite(p.mean_interval_ms) || p.mean_interval_ms < 0) {
+    return { valid: false, report: null, error: 'Campo mean_interval_ms ausente o inválido' };
+  }
+
+  if (
+    typeof p.confidence !== 'number' ||
+    !Number.isFinite(p.confidence) ||
+    p.confidence < 0 ||
+    p.confidence > 1
+  ) {
+    return { valid: false, report: null, error: 'Campo confidence ausente o fuera de rango [0,1]' };
+  }
+
+  if (p.lat !== null && p.lat !== undefined) {
+    if (typeof p.lat !== 'number' || !Number.isFinite(p.lat) || p.lat < -90 || p.lat > 90) {
+      return { valid: false, report: null, error: 'Campo lat inválido o fuera de rango [-90, 90]' };
+    }
+  }
+
+  if (p.lon !== null && p.lon !== undefined) {
+    if (typeof p.lon !== 'number' || !Number.isFinite(p.lon) || p.lon < -180 || p.lon > 180) {
+      return { valid: false, report: null, error: 'Campo lon inválido o fuera de rango [-180, 180]' };
+    }
+  }
+
+  if (typeof p.reported_at !== 'string' || p.reported_at.length === 0) {
+    return { valid: false, report: null, error: 'Campo reported_at ausente o inválido' };
+  }
+
+  return {
+    valid: true,
+    error: null,
+    report: {
+      id: p.id,
+      device_token: p.device_token,
+      peak_count: p.peak_count,
+      mean_interval_ms: p.mean_interval_ms,
+      confidence: p.confidence,
+      lat: typeof p.lat === 'number' ? p.lat : null,
+      lon: typeof p.lon === 'number' ? p.lon : null,
+      reported_at: p.reported_at,
+    },
+  };
+}
+
+/**
+ * Resuelve la zona más cercana a unas coordenadas dadas, entre las zonas
+ * registradas cuyo radio contiene el punto. Retorna null si no hay
+ * coordenadas o ninguna zona cubre el punto.
+ *
+ * La app móvil no conoce el zone_id (no hay selección de zona en el flujo
+ * actual), así que el backend resuelve la zona por proximidad GPS —
+ * consistente con el cálculo de contribución GPS en `scoring-engine.ts`.
+ */
+export function resolveZoneForCoordinates(
+  db: Database.Database,
+  lat: number | null,
+  lon: number | null,
+): string | null {
+  if (lat === null || lon === null) return null;
+
+  const zones = db
+    .prepare(`SELECT id, center_lat, center_lon, radius_m FROM zones`)
+    .all() as Array<{ id: string; center_lat: number; center_lon: number; radius_m: number }>;
+
+  let closestZoneId: string | null = null;
+  let closestDistance = Infinity;
+
+  for (const zone of zones) {
+    const distance = approximateDistanceMeters(zone.center_lat, zone.center_lon, lat, lon);
+    if (distance <= zone.radius_m && distance < closestDistance) {
+      closestDistance = distance;
+      closestZoneId = zone.id;
+    }
+  }
+
+  return closestZoneId;
+}
+
+/**
+ * Almacena un reporte acústico ya resuelto a una zona en SQLite.
+ * Usa INSERT OR IGNORE para idempotencia ante reintentos con el mismo id.
+ */
+export function storeAcousticReport(
+  db: Database.Database,
+  zoneId: string,
+  report: AcousticReportInput,
+): void {
+  db.prepare(`
+    INSERT OR IGNORE INTO acoustic_reports
+      (id, zone_id, device_token, peak_count, mean_interval_ms, confidence, lat, lon, reported_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    report.id,
+    zoneId,
+    report.device_token,
+    report.peak_count,
+    report.mean_interval_ms,
+    report.confidence,
+    report.lat,
+    report.lon,
+    report.reported_at,
+  );
+}
+
 // --- Creación del relay ---
 
 /**
  * Crea y configura el servidor WebSocket relay para apps móviles.
  *
  * El relay:
- * 1. Escucha en el puerto configurado (default 9002) conexiones WebSocket JSON
+ * 1. Escucha en el puerto configurado (default 9001) conexiones WebSocket JSON
  * 2. Procesa mensajes `cali/sync/entries`: valida, deduplica, almacena y responde con ack
- * 3. Se suscribe internamente al broker MQTT en `cali/zone/+/csi`
- * 4. Retransmite mensajes CSI a todos los clientes móviles conectados
+ * 3. Procesa mensajes `cali/sync/acoustic`: valida, resuelve zona por GPS, almacena y responde con ack
+ * 4. Se suscribe internamente al broker MQTT en `cali/zone/+/csi`
+ * 5. Retransmite mensajes CSI a todos los clientes móviles conectados
  */
 export function createWsRelay(options: WsRelayOptions): WsRelayInstance {
   const {
@@ -272,6 +447,7 @@ export function createWsRelay(options: WsRelayOptions): WsRelayInstance {
     mqttToken,
     validTokens = new Set<string>(),
     onFieldReport,
+    onAcousticReport,
   } = options;
 
   const clients = new Set<WebSocket>();
@@ -298,7 +474,7 @@ export function createWsRelay(options: WsRelayOptions): WsRelayInstance {
     console.log(`[ws-relay] Cliente móvil conectado (total: ${clients.size})`);
 
     socket.on('message', (data) => {
-      handleClientMessage(socket, data, db, onFieldReport);
+      handleClientMessage(socket, data, db, onFieldReport, onAcousticReport);
     });
 
     socket.on('close', () => {
@@ -399,6 +575,7 @@ function handleClientMessage(
   data: unknown,
   db: Database.Database,
   onFieldReport?: (entry: { id: string; lat: number; lon: number; note: string; captured_at: string }) => void,
+  onAcousticReport?: (report: ResolvedAcousticReport) => void,
 ): void {
   let message: RelayIncomingMessage;
 
@@ -418,6 +595,9 @@ function handleClientMessage(
   switch (message.type) {
     case SYNC_ENTRIES_TOPIC:
       handleSyncEntries(socket, message.payload, db, onFieldReport);
+      break;
+    case SYNC_ACOUSTIC_TOPIC:
+      handleAcousticReport(socket, message.payload, db, onAcousticReport);
       break;
     default:
       sendError(socket, `Tipo de mensaje no soportado: ${message.type}`);
@@ -473,6 +653,42 @@ function handleSyncEntries(
   };
 
   sendMessage(socket, SYNC_ACK_TOPIC, ack);
+}
+
+/**
+ * Maneja un reporte acústico individual (patrón de golpe detectado en la app móvil).
+ * Valida, resuelve la zona por proximidad GPS, almacena y notifica para
+ * disparar el recálculo del scoring engine (Requisito 11.5: ≤3s).
+ */
+function handleAcousticReport(
+  socket: WebSocket,
+  payload: unknown,
+  db: Database.Database,
+  onAcousticReport?: (report: ResolvedAcousticReport) => void,
+): void {
+  const { valid, report, error } = validateAcousticReport(payload);
+
+  if (!valid || !report) {
+    sendMessage(socket, SYNC_ACOUSTIC_ACK_TOPIC, { acknowledged: false, id: null, error });
+    return;
+  }
+
+  const zoneId = resolveZoneForCoordinates(db, report.lat, report.lon);
+
+  if (zoneId === null) {
+    sendMessage(socket, SYNC_ACOUSTIC_ACK_TOPIC, {
+      acknowledged: false,
+      id: report.id,
+      error: 'No se encontró una zona registrada cerca de las coordenadas reportadas',
+    });
+    return;
+  }
+
+  storeAcousticReport(db, zoneId, report);
+
+  sendMessage(socket, SYNC_ACOUSTIC_ACK_TOPIC, { acknowledged: true, id: report.id, zone_id: zoneId });
+
+  onAcousticReport?.({ ...report, zone_id: zoneId });
 }
 
 /**
