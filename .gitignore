@@ -44,6 +44,11 @@ desktop.ini
 # ESP-IDF firmware (excluido para mantenerse privado)
 firmware/
 
+# AI agent context and project internal rules (local-only)
+.kiro/
+AGENTS.md
+REGLAS_IMPORTANTES.md
+
 # Logs
 *.log
 npm-debug.log*
