@@ -1,0 +1,38 @@
+{
+  "name": "cali-rescue-backend",
+  "version": "0.1.0",
+  "description": "CALI Rescue System — Local backend with MQTT broker, scoring engine, and real-time dashboard",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "aedes": "0.51.3",
+    "better-sqlite3": "npm:better-sqlite3-multiple-ciphers@13.0.3",
+    "express": "4.21.2",
+    "mqtt": "5.10.4",
+    "ws": "8.18.1"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.0",
+    "@types/node": "22.10.5",
+    "@types/ws": "8.5.13",
+    "fast-check": "^4.9.0",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
+  }
+}

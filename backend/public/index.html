@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CALI Rescue — Panel de Control</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eaeaea;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #16213e;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 2px solid #0f3460;
+    }
+
+    header h1 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: #e94560;
+    }
+
+    header .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+    }
+
+    header .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #4caf50;
+      animation: pulse 2s infinite;
+    }
+
+    header .status-dot.disconnected {
+      background: #f44336;
+      animation: none;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    #map {
+      flex: 1;
+      z-index: 1;
+    }
+
+    .zone-marker-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      border: 3px solid rgba(255, 255, 255, 0.8);
+      font-size: 11px;
+      font-weight: bold;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+
+    .zone-marker-icon.color-green { background: #4caf50; }
+    .zone-marker-icon.color-yellow { background: #ff9800; }
+    .zone-marker-icon.color-red { background: #f44336; }
+    .zone-marker-icon.color-grey { background: #9e9e9e; }
+
+    .zone-popup {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-width: 160px;
+    }
+
+    .zone-popup h3 {
+      margin: 0 0 6px 0;
+      font-size: 14px;
+      color: #333;
+    }
+
+    .zone-popup .probability-value {
+      font-size: 24px;
+      font-weight: 700;
+      margin: 4px 0;
+    }
+
+    .zone-popup .probability-value.color-green { color: #4caf50; }
+    .zone-popup .probability-value.color-yellow { color: #ff9800; }
+    .zone-popup .probability-value.color-red { color: #f44336; }
+    .zone-popup .probability-value.color-grey { color: #9e9e9e; }
+
+    .zone-popup .last-update {
+      font-size: 11px;
+      color: #666;
+      margin-top: 4px;
+    }
+
+    .zone-popup .no-data {
+      font-style: italic;
+      color: #999;
+    }
+
+    .field-report-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #2196f3;
+      border: 2px solid rgba(255, 255, 255, 0.9);
+      font-size: 14px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+
+    .field-report-popup {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-width: 140px;
+    }
+
+    .field-report-popup h3 {
+      margin: 0 0 4px 0;
+      font-size: 13px;
+      color: #1565c0;
+    }
+
+    .field-report-popup .report-note {
+      font-size: 12px;
+      color: #333;
+      margin: 4px 0;
+    }
+
+    .field-report-popup .report-time {
+      font-size: 11px;
+      color: #666;
+    }
+
+    /* --- Panel de estado de nodos ESP32 --- */
+    #nodeStatusPanel {
+      position: absolute;
+      top: 60px;
+      right: 12px;
+      z-index: 1000;
+      background: rgba(22, 33, 62, 0.95);
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      padding: 12px;
+      min-width: 200px;
+      max-width: 280px;
+      max-height: 50vh;
+      overflow-y: auto;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    #nodeStatusPanel h2 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #e94560;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #nodeStatusPanel .node-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    #nodeStatusPanel .node-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 6px;
+      font-size: 0.8rem;
+    }
+
+    #nodeStatusPanel .node-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    #nodeStatusPanel .node-dot.online {
+      background: #4caf50;
+      box-shadow: 0 0 6px rgba(76, 175, 80, 0.6);
+    }
+
+    #nodeStatusPanel .node-dot.offline {
+      background: #f44336;
+    }
+
+    #nodeStatusPanel .node-info {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #nodeStatusPanel .node-id {
+      font-weight: 600;
+      color: #eaeaea;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #nodeStatusPanel .node-zone {
+      font-size: 0.7rem;
+      color: #aaa;
+    }
+
+    #nodeStatusPanel .node-status-text {
+      margin-left: auto;
+      font-size: 0.7rem;
+      color: #aaa;
+      white-space: nowrap;
+    }
+
+    #nodeStatusPanel .node-status-text.online {
+      color: #4caf50;
+    }
+
+    #nodeStatusPanel .node-status-text.offline {
+      color: #f44336;
+    }
+
+    #nodeStatusPanel .empty-message {
+      font-size: 0.75rem;
+      color: #666;
+      font-style: italic;
+      text-align: center;
+      padding: 8px 0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🔍 CALI Rescue — Mapa de Zonas</h1>
+    <div class="status-indicator">
+      <div class="status-dot" id="wsStatus"></div>
+      <span id="wsStatusText">Conectado</span>
+    </div>
+  </header>
+
+  <!-- Panel de estado de nodos ESP32 (Requisitos 7.5, 7.6) -->
+  <div id="nodeStatusPanel">
+    <h2>📡 Nodos ESP32</h2>
+    <div class="node-list" id="nodeList">
+      <div class="empty-message">Sin nodos registrados</div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    /**
+     * CALI Rescue System — Panel de Control (Dashboard)
+     *
+     * Muestra todas las zonas registradas como marcadores en un mapa Leaflet.js.
+     * Colores según motion_probability:
+     *   verde (<0.3), amarillo (0.3–0.6), rojo (≥0.6), gris (sin datos)
+     *
+     * Requisitos: 7.1, 7.2, 7.3, 7.4
+     */
+
+    // --- Estado del dashboard ---
+    const dashboardState = {
+      zones: new Map(),          // zone_id -> { zone, marker, color, probability }
+      fieldReports: new Map(),   // entry_id -> { entry, marker }
+      ws: null,                  // WebSocket connection
+      reconnectAttempts: 0,
+      maxReconnectAttempts: 50,
+    };
+
+    // --- Inicialización del mapa ---
+    const map = L.map('map').setView([3.4516, -76.5320], 13); // Centro de Cali, Colombia
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    // --- Funciones auxiliares ---
+
+    /**
+     * Mapea un valor de probabilidad a un color según los umbrales definidos.
+     * @param {number|null} probability - Valor de motion_probability (0.0–1.0) o null
+     * @returns {'green'|'yellow'|'red'|'grey'} Color correspondiente
+     */
+    function probabilityToColor(probability) {
+      if (probability === null || probability === undefined) return 'grey';
+      if (probability < 0.3) return 'green';
+      if (probability < 0.6) return 'yellow';
+      return 'red';
+    }
+
+    /**
+     * Crea un ícono de marcador personalizado con el color y texto indicados.
+     * @param {string} color - Color del marcador ('green'|'yellow'|'red'|'grey')
+     * @param {string} text - Texto a mostrar dentro del marcador
+     * @returns {L.DivIcon} Ícono de Leaflet
+     */
+    function createZoneIcon(color, text) {
+      return L.divIcon({
+        className: '',
+        html: `<div class="zone-marker-icon color-${color}" style="width:36px;height:36px;">${text}</div>`,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
+        popupAnchor: [0, -20],
+      });
+    }
+
+    /**
+     * Formatea el valor de probabilidad para mostrar en el marcador.
+     * @param {number|null} probability
+     * @returns {string}
+     */
+    function formatProbability(probability) {
+      if (probability === null || probability === undefined) return '—';
+      return (probability * 100).toFixed(0) + '%';
+    }
+
+    /**
+     * Genera el contenido HTML del popup de una zona.
+     * @param {object} zone - Datos de la zona
+     * @param {number|null} probability - Última probabilidad
+     * @param {string} color - Color actual
+     * @returns {string} HTML del popup
+     */
+    function createPopupContent(zone, probability, color) {
+      const probDisplay = probability !== null && probability !== undefined
+        ? `<div class="probability-value color-${color}">${(probability * 100).toFixed(1)}%</div>`
+        : `<div class="probability-value color-grey no-data">Sin datos</div>`;
+
+      const lastUpdate = zone.last_update
+        ? `<div class="last-update">Última actualización: ${new Date(zone.last_update).toLocaleString('es-CO')}</div>`
+        : `<div class="last-update no-data">Sin telemetría recibida</div>`;
+
+      return `
+        <div class="zone-popup">
+          <h3>📍 ${zone.name || zone.id}</h3>
+          ${probDisplay}
+          ${lastUpdate}
+        </div>
+      `;
+    }
+
+    // --- Gestión de zonas y marcadores ---
+
+    /**
+     * Agrega o actualiza un marcador de zona en el mapa.
+     * @param {object} zone - Datos de la zona desde la API
+     */
+    function upsertZoneMarker(zone) {
+      const probability = zone.last_probability !== undefined && zone.last_probability !== null
+        ? zone.last_probability / 100  // Convertir de 0-100 a 0.0-1.0
+        : null;
+      const color = probabilityToColor(probability);
+      const text = formatProbability(probability);
+
+      const existing = dashboardState.zones.get(zone.id);
+
+      if (existing) {
+        // Actualizar marcador existente
+        existing.marker.setIcon(createZoneIcon(color, text));
+        existing.marker.setPopupContent(createPopupContent(zone, probability, color));
+        existing.color = color;
+        existing.probability = probability;
+        existing.zone = zone;
+      } else {
+        // Crear nuevo marcador
+        const marker = L.marker([zone.center_lat, zone.center_lon], {
+          icon: createZoneIcon(color, text),
+        }).addTo(map);
+
+        marker.bindPopup(createPopupContent(zone, probability, color));
+
+        dashboardState.zones.set(zone.id, {
+          zone,
+          marker,
+          color,
+          probability,
+        });
+      }
+    }
+
+    /**
+     * Actualiza un marcador de zona con nueva telemetría CSI.
+     * @param {string} zoneId - Identificador de la zona
+     * @param {number} motionProbability - Nuevo valor de motion_probability (0.0–1.0)
+     */
+    function updateZoneFromTelemetry(zoneId, motionProbability) {
+      const existing = dashboardState.zones.get(zoneId);
+      if (!existing) return;
+
+      const color = probabilityToColor(motionProbability);
+      const text = formatProbability(motionProbability);
+
+      existing.probability = motionProbability;
+      existing.color = color;
+      existing.zone.last_probability = motionProbability * 100;
+      existing.zone.last_update = new Date().toISOString();
+
+      existing.marker.setIcon(createZoneIcon(color, text));
+      existing.marker.setPopupContent(
+        createPopupContent(existing.zone, motionProbability, color)
+      );
+    }
+
+    // --- Gestión de reportes de campo (ubicaciones sincronizadas) ---
+
+    /**
+     * Crea el ícono de un marcador de reporte de campo.
+     * @returns {L.DivIcon} Ícono azul con emoji de ubicación
+     */
+    function createFieldReportIcon() {
+      return L.divIcon({
+        className: '',
+        html: '<div class="field-report-icon">📋</div>',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+        popupAnchor: [0, -16],
+      });
+    }
+
+    /**
+     * Genera el contenido HTML del popup de un reporte de campo.
+     * @param {object} entry - Entrada de ubicación sincronizada
+     * @returns {string} HTML del popup
+     */
+    function createFieldReportPopup(entry) {
+      const timeStr = entry.captured_at
+        ? new Date(entry.captured_at).toLocaleString('es-CO')
+        : 'Fecha desconocida';
+      const noteStr = entry.note || 'Sin nota';
+
+      return `
+        <div class="field-report-popup">
+          <h3>📋 Reporte de Campo</h3>
+          <div class="report-note">${noteStr}</div>
+          <div class="report-time">${timeStr}</div>
+        </div>
+      `;
+    }
+
+    /**
+     * Agrega un marcador de reporte de campo al mapa.
+     * No duplica si el ID ya existe.
+     * @param {object} entry - Entrada con id, lat, lon, note, captured_at
+     */
+    function addFieldReportMarker(entry) {
+      if (dashboardState.fieldReports.has(entry.id)) return;
+
+      const marker = L.marker([entry.lat, entry.lon], {
+        icon: createFieldReportIcon(),
+      }).addTo(map);
+
+      marker.bindPopup(createFieldReportPopup(entry));
+
+      dashboardState.fieldReports.set(entry.id, { entry, marker });
+    }
+
+    // --- Carga inicial de datos ---
+
+    /**
+     * Carga todas las zonas registradas desde la API del backend.
+     * Ajusta la vista del mapa para mostrar todos los marcadores.
+     */
+    async function loadZones() {
+      try {
+        const response = await fetch('/api/zones');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const zones = await response.json();
+
+        for (const zone of zones) {
+          upsertZoneMarker(zone);
+        }
+
+        // Ajustar vista del mapa si hay zonas
+        if (zones.length > 0) {
+          const bounds = L.latLngBounds(
+            zones.map(z => [z.center_lat, z.center_lon])
+          );
+          map.fitBounds(bounds, { padding: [50, 50] });
+        }
+      } catch (err) {
+        console.error('[dashboard] Error al cargar zonas:', err);
+      }
+    }
+
+    // --- WebSocket para actualizaciones en tiempo real ---
+
+    /**
+     * Establece la conexión WebSocket para recibir actualizaciones de telemetría.
+     * Reconecta automáticamente en caso de desconexión.
+     */
+    function connectWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`;
+
+      const ws = new WebSocket(wsUrl);
+      dashboardState.ws = ws;
+
+      ws.onopen = () => {
+        console.log('[dashboard] WebSocket conectado');
+        dashboardState.reconnectAttempts = 0;
+        updateConnectionStatus(true);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          handleWsMessage(msg);
+        } catch (err) {
+          console.error('[dashboard] Error al procesar mensaje WS:', err);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('[dashboard] WebSocket desconectado');
+        updateConnectionStatus(false);
+        scheduleReconnect();
+      };
+
+      ws.onerror = (err) => {
+        console.error('[dashboard] Error WebSocket:', err);
+        ws.close();
+      };
+    }
+
+    /**
+     * Procesa un mensaje recibido por WebSocket.
+     * Soporta actualizaciones de telemetría CSI, zonas nuevas, reportes de campo,
+     * y estado de nodos ESP32 (LWT y telemetría).
+     */
+    function handleWsMessage(msg) {
+      switch (msg.type) {
+        case 'csi_update':
+          // Actualización de telemetría CSI para una zona
+          if (msg.zone_id && typeof msg.motion_probability === 'number') {
+            updateZoneFromTelemetry(msg.zone_id, msg.motion_probability);
+            // Actualizar lastSeen del nodo que envió la telemetría
+            if (msg.node_id) {
+              updateNodeLastSeen(msg.node_id, msg.zone_id);
+            }
+          }
+          break;
+
+        case 'node_status':
+          // Mensaje de estado de nodo (LWT offline o reconexión online)
+          if (msg.node_id && msg.zone_id) {
+            if (msg.status === 'offline') {
+              markNodeOffline(msg.node_id, msg.zone_id);
+            } else if (msg.status === 'online') {
+              updateNodeLastSeen(msg.node_id, msg.zone_id);
+            }
+          }
+          break;
+
+        case 'nodes_sync':
+          // Sincronización inicial de nodos al conectar el dashboard
+          if (Array.isArray(msg.nodes)) {
+            for (const node of msg.nodes) {
+              if (node.online) {
+                updateNodeLastSeen(node.node_id, node.zone_id);
+              } else {
+                markNodeOffline(node.node_id, node.zone_id);
+              }
+            }
+          }
+          break;
+
+        case 'zone_added':
+          // Nueva zona registrada
+          if (msg.zone) {
+            upsertZoneMarker(msg.zone);
+          }
+          break;
+
+        case 'zones_sync':
+          // Sincronización completa de zonas
+          if (Array.isArray(msg.zones)) {
+            for (const zone of msg.zones) {
+              upsertZoneMarker(zone);
+            }
+          }
+          break;
+
+        case 'field_report':
+          // Nueva entrada de ubicación sincronizada desde app móvil
+          if (msg.entry) {
+            addFieldReportMarker(msg.entry);
+          }
+          break;
+
+        case 'field_reports_sync':
+          // Sincronización de reportes de campo existentes al conectarse
+          if (Array.isArray(msg.entries)) {
+            for (const entry of msg.entries) {
+              addFieldReportMarker(entry);
+            }
+          }
+          break;
+
+        default:
+          console.log('[dashboard] Mensaje desconocido:', msg.type);
+      }
+    }
+
+    /**
+     * Programa un intento de reconexión con intervalo fijo de 5 segundos.
+     */
+    function scheduleReconnect() {
+      if (dashboardState.reconnectAttempts >= dashboardState.maxReconnectAttempts) {
+        console.warn('[dashboard] Máximo de intentos de reconexión alcanzado');
+        return;
+      }
+
+      dashboardState.reconnectAttempts++;
+      setTimeout(connectWebSocket, 5000);
+    }
+
+    /**
+     * Actualiza el indicador visual de estado de conexión.
+     * @param {boolean} connected
+     */
+    function updateConnectionStatus(connected) {
+      const dot = document.getElementById('wsStatus');
+      const text = document.getElementById('wsStatusText');
+
+      if (connected) {
+        dot.classList.remove('disconnected');
+        text.textContent = 'Conectado';
+      } else {
+        dot.classList.add('disconnected');
+        text.textContent = 'Desconectado';
+      }
+    }
+
+    // --- Estado de nodos ESP32 (Requisitos 7.5, 7.6) ---
+
+    /** Tiempo máximo sin mensaje para considerar un nodo offline (30 segundos) */
+    const NODE_OFFLINE_TIMEOUT_MS = 30_000;
+
+    /** Intervalo de verificación de estado de nodos (5 segundos) */
+    const NODE_CHECK_INTERVAL_MS = 5_000;
+
+    /**
+     * Estado de los nodos ESP32.
+     * Mapa: node_id -> { node_id, zone_id, lastSeen (timestamp ms), online (boolean) }
+     */
+    const nodeState = new Map();
+
+    /**
+     * Actualiza el timestamp lastSeen de un nodo al recibir un mensaje CSI.
+     * Si el nodo es nuevo, lo agrega al registro.
+     * @param {string} nodeId - Identificador del nodo
+     * @param {string} zoneId - Zona del nodo
+     */
+    function updateNodeLastSeen(nodeId, zoneId) {
+      const now = Date.now();
+      const existing = nodeState.get(nodeId);
+
+      if (existing) {
+        existing.lastSeen = now;
+        existing.zone_id = zoneId;
+        if (!existing.online) {
+          existing.online = true;
+          renderNodeStatusPanel();
+        }
+      } else {
+        nodeState.set(nodeId, {
+          node_id: nodeId,
+          zone_id: zoneId,
+          lastSeen: now,
+          online: true,
+        });
+        renderNodeStatusPanel();
+      }
+    }
+
+    /**
+     * Marca un nodo como offline inmediatamente (por mensaje LWT).
+     * @param {string} nodeId - Identificador del nodo
+     * @param {string} zoneId - Zona del nodo
+     */
+    function markNodeOffline(nodeId, zoneId) {
+      const existing = nodeState.get(nodeId);
+      if (existing) {
+        existing.online = false;
+        renderNodeStatusPanel();
+      } else {
+        // Nodo desconocido reportado offline — registrarlo igual
+        nodeState.set(nodeId, {
+          node_id: nodeId,
+          zone_id: zoneId,
+          lastSeen: 0,
+          online: false,
+        });
+        renderNodeStatusPanel();
+      }
+    }
+
+    /**
+     * Verifica qué nodos excedieron el timeout de 30 segundos sin mensaje.
+     * Se ejecuta cada 5 segundos vía setInterval.
+     * Property 9: Node is offline if (current_timestamp - last_seen) > 30 seconds
+     */
+    function checkNodeTimeouts() {
+      const now = Date.now();
+      let changed = false;
+
+      for (const [nodeId, node] of nodeState) {
+        const elapsed = now - node.lastSeen;
+        const shouldBeOnline = elapsed <= NODE_OFFLINE_TIMEOUT_MS;
+
+        if (node.online && !shouldBeOnline) {
+          node.online = false;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        renderNodeStatusPanel();
+      }
+    }
+
+    /**
+     * Renderiza la lista de nodos en el panel de estado.
+     * Muestra cada nodo con su indicador online/offline.
+     */
+    function renderNodeStatusPanel() {
+      const container = document.getElementById('nodeList');
+
+      if (nodeState.size === 0) {
+        container.innerHTML = '<div class="empty-message">Sin nodos registrados</div>';
+        return;
+      }
+
+      // Ordenar: online primero, luego por node_id
+      const nodes = Array.from(nodeState.values()).sort((a, b) => {
+        if (a.online !== b.online) return a.online ? -1 : 1;
+        return a.node_id.localeCompare(b.node_id);
+      });
+
+      let html = '';
+      for (const node of nodes) {
+        const statusClass = node.online ? 'online' : 'offline';
+        const statusText = node.online ? 'En línea' : 'Desconectado';
+
+        html += `
+          <div class="node-item">
+            <div class="node-dot ${statusClass}"></div>
+            <div class="node-info">
+              <span class="node-id">${escapeHtml(node.node_id)}</span>
+              <span class="node-zone">Zona: ${escapeHtml(node.zone_id)}</span>
+            </div>
+            <span class="node-status-text ${statusClass}">${statusText}</span>
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
+    }
+
+    /**
+     * Escapa caracteres HTML especiales para evitar XSS.
+     * @param {string} str
+     * @returns {string}
+     */
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // Iniciar verificación periódica de timeouts de nodos (cada 5 segundos)
+    setInterval(checkNodeTimeouts, NODE_CHECK_INTERVAL_MS);
+
+    // --- Inicialización ---
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadZones();
+      connectWebSocket();
+    });
+  </script>
+</body>
+</html>
