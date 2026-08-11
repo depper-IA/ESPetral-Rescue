@@ -3,6 +3,21 @@
 .env.*
 !.env.example
 
+# AI agent config files
+.kiro/
+.cursor/
+.windsurf/
+.continue/
+.claude/
+.copilot/
+.aider*
+.atl/
+AGENTS.md
+CLAUDE.md
+COPILOT.md
+GEMINI.md
+REGLAS_IMPORTANTES.md
+
 # Dependencies
 node_modules/
 backend/node_modules/

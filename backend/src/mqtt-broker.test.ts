@@ -203,6 +203,9 @@ describe('buildLastWillTopic', () => {
 
 // --- Tests de integración con broker real ---
 
+/** Aedes only supports MQTT v3.1.1 (protocol version 4). mqtt.js v5 defaults to v5. */
+const MQTT_OPTIONS = { protocolVersion: 4 as const };
+
 describe('createMqttBroker - integración', () => {
   let brokerInstance: MqttBrokerInstance;
 
@@ -220,6 +223,7 @@ describe('createMqttBroker - integración', () => {
     await brokerInstance.ready;
 
     const client = mqtt.connect('mqtt://localhost:18831', {
+      ...MQTT_OPTIONS,
       username: 'esp32-node',
       password: 'test-token-valid',
     });
@@ -244,6 +248,7 @@ describe('createMqttBroker - integración', () => {
     await brokerInstance.ready;
 
     const client = mqtt.connect('mqtt://localhost:18832', {
+      ...MQTT_OPTIONS,
       username: 'attacker',
       password: 'wrong-token',
     });
@@ -269,6 +274,7 @@ describe('createMqttBroker - integración', () => {
     await brokerInstance.ready;
 
     const client = mqtt.connect('mqtt://localhost:18833', {
+      ...MQTT_OPTIONS,
       username: 'node-a',
       password: 'pub-token',
     });
@@ -301,6 +307,7 @@ describe('createMqttBroker - integración', () => {
 
     // Suscriptor
     const subscriber = mqtt.connect('mqtt://localhost:18834', {
+      ...MQTT_OPTIONS,
       username: 'sub',
       password: 'pub-token',
     });
@@ -316,6 +323,7 @@ describe('createMqttBroker - integración', () => {
 
     // Publicador con mensaje inválido
     const publisher = mqtt.connect('mqtt://localhost:18834', {
+      ...MQTT_OPTIONS,
       username: 'pub',
       password: 'pub-token',
     });
@@ -356,6 +364,7 @@ describe('createMqttBroker - integración', () => {
     await brokerInstance.ready;
 
     const subscriber = mqtt.connect('mqtt://localhost:18835', {
+      ...MQTT_OPTIONS,
       username: 'sub',
       password: 'pub-token',
     });
@@ -370,6 +379,7 @@ describe('createMqttBroker - integración', () => {
     await new Promise(resolve => setTimeout(resolve, 100));
 
     const publisher = mqtt.connect('mqtt://localhost:18835', {
+      ...MQTT_OPTIONS,
       username: 'pub',
       password: 'pub-token',
     });
@@ -412,6 +422,7 @@ describe('createMqttBroker - integración', () => {
 
     // Suscriptor
     const subscriber = mqtt.connect('mqtt://localhost:18836', {
+      ...MQTT_OPTIONS,
       username: 'sub',
       password: 'relay-token',
     });
@@ -427,6 +438,7 @@ describe('createMqttBroker - integración', () => {
 
     // Publicador
     const publisher = mqtt.connect('mqtt://localhost:18836', {
+      ...MQTT_OPTIONS,
       username: 'pub',
       password: 'relay-token',
     });
@@ -472,6 +484,7 @@ describe('createMqttBroker - integración', () => {
 
     // Suscriptor para el tópico de estado
     const subscriber = mqtt.connect('mqtt://localhost:18837', {
+      ...MQTT_OPTIONS,
       username: 'sub',
       password: 'will-token',
     });
@@ -488,6 +501,7 @@ describe('createMqttBroker - integración', () => {
     // Cliente con Last Will configurado
     const willPayload = buildLastWillPayload('node-c', 'zone-c');
     const clientWithWill = mqtt.connect('mqtt://localhost:18837', {
+      ...MQTT_OPTIONS,
       username: 'node-c',
       password: 'will-token',
       will: {

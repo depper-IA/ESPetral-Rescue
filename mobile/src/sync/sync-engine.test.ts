@@ -269,18 +269,20 @@ describe('SyncEngine', () => {
 
       engine.connect();
 
-      // Agotar reintentos
-      for (let i = 0; i < 4; i++) {
-        vi.advanceTimersByTime(50);
-        vi.advanceTimersByTime(100);
-      }
+      // Primer intento: timeout (retryCount → 1)
+      vi.advanceTimersByTime(50);
+      // Esperar retry interval para segundo intento
+      vi.advanceTimersByTime(100);
+
+      // Segundo intento: timeout (retryCount → 2, offline = true)
+      vi.advanceTimersByTime(50);
 
       expect(engine.isPersistentOffline()).toBe(true);
 
-      // Avanzar para un nuevo intento
+      // Esperar retry interval para tercer intento (sigue intentando aunque offline)
       vi.advanceTimersByTime(100);
 
-      // Simular conexión exitosa
+      // Simular conexión exitosa en el tercer intento
       const ws = MockWebSocket.getLastInstance()!;
       ws.simulateOpen();
 

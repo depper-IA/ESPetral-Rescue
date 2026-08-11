@@ -203,13 +203,7 @@ export class SyncEngine {
   }
 
   private handleConnectionFailure(): void {
-    this.retryCount++;
     this.setConnectionState('disconnected');
-
-    if (this.retryCount >= this.maxRetries) {
-      this.setPersistentOffline(true);
-    }
-
     this.scheduleRetry();
   }
 
@@ -218,7 +212,7 @@ export class SyncEngine {
 
     this.retryCount++;
 
-    if (this.retryCount > this.maxRetries) {
+    if (this.retryCount >= this.maxRetries) {
       this.setPersistentOffline(true);
       // Seguimos intentando pero con indicador offline visible
     }

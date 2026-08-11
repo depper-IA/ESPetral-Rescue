@@ -41,6 +41,7 @@ async function main() {
 
   // 3. Inicializar broker MQTT
   const broker = createMqttBroker({ tokens: internalTokens, db });
+  await broker.ready;
   console.log('[cali] Broker MQTT iniciado');
 
   // 4. Inicializar motor de puntuación
