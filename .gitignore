@@ -3,8 +3,7 @@
 .env.*
 !.env.example
 
-# AI agent config files
-.kiro/
+# AI agent config files (excluir solo tooling externo, NO specs/contexto del proyecto)
 .cursor/
 .windsurf/
 .continue/
@@ -12,11 +11,9 @@
 .copilot/
 .aider*
 .atl/
-AGENTS.md
 CLAUDE.md
 COPILOT.md
 GEMINI.md
-REGLAS_IMPORTANTES.md
 
 # Dependencies
 node_modules/

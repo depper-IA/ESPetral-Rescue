@@ -2,11 +2,11 @@
 
 # ESPetral Rescue
 
-**Open-source field tool for search and rescue operations**
-Wi-Fi CSI motion detection · Acoustic knock sensing · GPS logging · Real-time dashboard
-Built in response to the Cali, Colombia disaster · By [Sam Wilkie](https://github.com/depper-IA)
+**Herramienta de código abierto para operaciones de búsqueda y rescate en campo**
+Detección de movimiento Wi-Fi CSI · Sensor acústico de golpes · Registro GPS · Panel en tiempo real
+Desarrollado en respuesta a la emergencia en Cali, Colombia · Por [Sam Wilkie](https://github.com/depper-IA)
 
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+[![Licencia](https://img.shields.io/badge/Licencia-MIT-green?style=flat-square)](LICENSE)
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-5.x-red?style=flat-square&logo=espressif&logoColor=white)](https://docs.espressif.com/projects/esp-idf)
 [![Node.js](https://img.shields.io/badge/Node.js-20.x-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -15,154 +15,154 @@ Built in response to the Cali, Colombia disaster · By [Sam Wilkie](https://gith
 
 ---
 
-## What It Is
+## Qué Es
 
-ESPetral Rescue is a multi-component detection system designed to help search and rescue teams locate trapped survivors in collapsed structures. It runs offline-first on a laptop at the rescue site and optionally syncs to AWS for remote coordination.
+ESPetral Rescue es un sistema de detección multicomponente diseñado para ayudar a los equipos de búsqueda y rescate a localizar personas atrapadas en estructuras colapsadas. Opera bajo la filosofía offline-first (desconectado primero) desde un computador portátil en el sitio de rescate y, opcionalmente, se sincroniza con AWS para coordinación remota.
 
-**Not a replacement for professional rescue equipment** — a force multiplier for field teams working with limited resources.
+**No es un reemplazo para equipos de rescate profesionales**: es un multiplicador de fuerza para equipos de campo que trabajan con recursos limitados.
 
 ---
 
-## How It Works
+## Cómo Funciona
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  RUBBLE ZONE                                                 │
-│  ESP32-C6 nodes → Wi-Fi CSI motion detection (20 fps)       │
-└──────────────────────┬───────────────────────────────────────┘
-                       │ MQTT over local Wi-Fi
-┌──────────────────────▼───────────────────────────────────────┐
-│  RESCUE SITE LAPTOP                                          │
-│  MQTT Broker · Scoring Engine · SQLite · Dashboard           │
-└──────────┬──────────────────────────┬────────────────────────┘
-           │ WebSocket                │ HTTPS every 30s (optional)
+│  ZONA DE ESCOMBROS                                          │
+│  Nodos ESP32-C6 → Detección de movimiento Wi-Fi CSI (20 fps)│
+└──────────────────────┬──────────────────────────────────────┘
+                       │ MQTT sobre Wi-Fi local
+┌──────────────────────▼──────────────────────────────────────┐
+│  PORTÁTIL DE RESCATE (SITIO DE CAMPO)                       │
+│  Broker MQTT · Motor de Puntuación · SQLite · Dashboard     │
+└──────────┬──────────────────────────┬───────────────────────┘
+           │ WebSocket                │ HTTPS cada 30s (opcional)
 ┌──────────▼──────────┐  ┌───────────▼────────────────────────┐
-│  Mobile PWA          │  │  AWS (Free Tier)                   │
-│  Acoustic detection  │  │  API GW · Lambda · DynamoDB · S3   │
-│  GPS logger          │  │  Remote dashboard · OTA firmware    │
-│  Offline-first       │  │  (only when internet available)    │
+│  PWA Móvil de Campo │  │  AWS (Capa Gratuita)               │
+│  Detección acústica │  │  API GW · Lambda · DynamoDB · S3   │
+│  Registrador GPS    │  │  Dashboard remoto · Firmware OTA   │
+│  Offline-first      │  │  (solo si hay internet disponible) │
 └─────────────────────┘  └────────────────────────────────────┘
 ```
 
-**Detection sources fused into a single Probability Indicator per zone:**
+**Fuentes de detección fusionadas en un indicador único de probabilidad por zona:**
 
-| Source | Weight | Method |
-|--------|--------|--------|
-| Wi-Fi CSI (ESP32) | 50% | Subcarrier amplitude variance over 2s sliding window |
-| Acoustic (mobile) | 35% | Knock pattern detection via Web Audio API (bandpass + spectral centroid) |
-| GPS proximity | 15% | Field team location density near zone center |
-
----
-
-## Components
-
-### `firmware/` — ESP32-C6 Firmware (C · ESP-IDF)
-- Wi-Fi CSI ping at 20 fps, motion probability computation
-- MQTT publish every 2s with circular buffer for offline resilience
-- LED hysteresis indicator, light-sleep power management (<80mA avg)
-- OTA firmware updates via S3/CloudFront
-
-### `backend/` — Local Server (TypeScript · Node.js)
-- Aedes MQTT broker (PSK auth, payload validation)
-- SQLite database with SQLCipher encryption + 72h auto-purge
-- Composite probability scoring engine (CSI + acoustic + GPS)
-- WebSocket relay for mobile apps
-- Express dashboard server (port 3000)
-- Cloud bridge: aggregates zone data and uploads to AWS every 30s
-
-### `mobile/` — Field PWA (React · Vite · TypeScript)
-- Acoustic knock detection with bandpass filtering and spectral centroid analysis
-- GPS location logger with encrypted localStorage persistence
-- Leaflet.js map view of logged points
-- WebSocket sync to backend when in range, offline-first when not
-
-### `cloud/` — AWS Free Tier Layer (SAM · Lambda · DynamoDB · S3)
-- API Gateway + Lambda: receives 30s aggregated summaries from bridge
-- DynamoDB single-table: zone state, alerts, node status (14-day TTL)
-- S3 + CloudFront: remote dashboard + OTA firmware distribution
-- Zero cost for 14-day operation (designed for a single rescue event)
+| Fuente | Peso | Método |
+|--------|------|--------|
+| Wi-Fi CSI (ESP32) | 50% | Varianza de amplitud de subportadoras en ventana móvil de 2s |
+| Acústica (móvil) | 35% | Detección de patrones de golpes vía Web Audio API (filtro pasabanda + centroide espectral) |
+| Proximidad GPS | 15% | Densidad de ubicación de equipos de campo cerca del centro de zona |
 
 ---
 
-## System Requirements
+## Componentes
 
-| Component | Hardware |
-|-----------|---------|
-| Detection nodes | ESP32-C6 Super Mini (~$38,900 COP / ~$10 USD) |
-| Coordination | Laptop with Node.js 20+ and Wi-Fi hotspot capability |
-| Field team | Any Android/iOS phone with a modern browser |
-| Network | Local Wi-Fi only — no internet required for field operation |
+### `firmware/` — Firmware ESP32-C6 (C · ESP-IDF)
+- Transmisión CSI ping a 20 fps y cálculo de probabilidad de movimiento
+- Publicación MQTT cada 2s con búfer circular para resiliencia sin conexión
+- Indicador LED con histéresis y gestión de energía en suspensión ligera (<80mA promedio)
+- Actualizaciones de firmware OTA mediante S3 y CloudFront
+
+### `backend/` — Servidor Local (TypeScript · Node.js)
+- Broker MQTT Aedes con autenticación PSK y validación de esquemas
+- Base de datos SQLite con encriptación SQLCipher y auto-purga a las 72 horas
+- Motor de puntuación de probabilidad compuesta (CSI + acústica + GPS)
+- Relay WebSocket para la aplicación móvil
+- Servidor de panel de control Express (puerto 3000)
+- Puente a la nube: agrega datos de zona y los envía a AWS cada 30s
+
+### `mobile/` — PWA de Campo (React · Vite · TypeScript)
+- Detección acústica de golpes con filtro pasabanda y análisis de centroide espectral
+- Registrador de ubicaciones GPS con almacenamiento local encriptado
+- Vista de mapa con Leaflet.js para puntos registrados
+- Sincronización WebSocket con el servidor local al estar en rango, 100% offline cuando no
+
+### `cloud/` — Capa AWS Free Tier (SAM · Lambda · DynamoDB · S3)
+- API Gateway + Lambda: recibe resúmenes agregados cada 30s desde el puente
+- Tabla única DynamoDB: estado de zonas, alertas y estado de nodos (TTL de 14 días)
+- S3 + CloudFront: panel de control remoto y distribución de firmware OTA
+- Cero costo durante 14 días de operación continua (diseñado para un evento de rescate)
 
 ---
 
-## Getting Started
+## Requisitos del Sistema
 
-### 1. Clone the repo
+| Componente | Hardware |
+|-----------|----------|
+| Nodos de detección | ESP32-C6 Super Mini (~$38.900 COP / ~$10 USD) |
+| Coordinación | Computador portátil con Node.js 20+ y zona de cobertura Wi-Fi (Hotspot) |
+| Equipo de campo | Cualquier teléfono Android o iOS con navegador web moderno |
+| Red | Red Wi-Fi local únicamente — no requiere internet para operación en campo |
+
+---
+
+## Guía de Inicio
+
+### 1. Clonar el repositorio
 
 ```bash
 git clone https://github.com/depper-IA/ESPetral-Rescue.git
 cd ESPetral-Rescue
 ```
 
-### 2. Start the backend
+### 2. Iniciar el servidor backend
 
 ```bash
 cd backend
 pnpm install
 pnpm run dev
-# Dashboard: http://localhost:3000
-# MQTT Broker: port 1883 (TCP) / 9001 (WS)
+# Panel de control: http://localhost:3000
+# Broker MQTT: puerto 1883 (TCP) / 9001 (WS)
 ```
 
-### 3. Flash the firmware
+### 3. Compilar y flashear el firmware
 
 ```bash
 cd firmware
 idf.py set-target esp32c6
-idf.py menuconfig   # Set NVS: zone_id, mqtt_host, mqtt_token
+idf.py menuconfig   # Configurar NVS: zone_id, mqtt_host, mqtt_token
 idf.py build flash monitor
 ```
 
-### 4. Open the mobile app
+### 4. Abrir la aplicación móvil
 
-Connect your phone to the laptop's Wi-Fi hotspot, then open:
+Conectar el teléfono a la red Wi-Fi del computador portátil y abrir en el navegador:
 ```
-http://<laptop-ip>:3000
+http://<ip-del-portatil>:3000
 ```
 
-### 5. (Optional) Deploy cloud layer
+### 5. (Opcional) Desplegar la capa en la nube
 
 ```bash
 cd cloud
-cp .env.example .env   # Add AWS credentials
+cp .env.example .env   # Configurar credenciales de AWS
 pnpm run deploy
 ```
 
 ---
 
-## Operational Design
+## Diseño Operativo
 
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| Data retention (local) | 72 hours | Emergency tool, not an archive |
-| Data retention (cloud) | 14 days | Covers 100% of documented earthquake survivals |
-| Alert threshold | >70% composite score | Triggers priority alert to all clients |
-| Source staleness | 10 minutes | Source excluded from score if no new data |
-| Max survivors window | 14 days | Literature: avg max 6.8 days, documented max 14 days |
-
----
-
-## Security
-
-- **Air-gapped local network** — no cloud traffic unless explicitly configured
-- **SQLCipher** — database encrypted at rest
-- **PSK token auth** — MQTT devices authenticate with pre-shared tokens
-- **GPS as PII** — coordinates encrypted in transit and at rest
-- **No cloud PII** — cloud layer stores only zone center coordinates, never individual GPS tracks
+| Parámetro | Valor | Justificación |
+|-----------|-------|---------------|
+| Retención de datos (local) | 72 horas | Herramienta de emergencia, no un archivo histórico |
+| Retención de datos (nube) | 14 días | Cubre el 100% de los casos documentados de supervivencia en terremotos |
+| Umbral de alerta | >70% puntaje compuesto | Dispara alerta prioritaria a todos los clientes |
+| Obsolescencia de fuente | 10 minutos | La fuente se excluye del cálculo si no envía datos nuevos |
+| Ventana máxima de supervivencia | 14 días | Literatura científica: promedio máx. 6.8 días, máximo documentado 14 días |
 
 ---
 
-## Stack
+## Seguridad
+
+- **Red local aislada (Air-Gapped)** — sin tráfico a la nube salvo configuración explícita
+- **SQLCipher** — base de datos encriptada en reposo
+- **Autenticación por Token PSK** — los dispositivos MQTT se autentican con claves compaginadas
+- **GPS como PII** — las coordenadas se encriptan en tránsito y en reposo
+- **Sin PII en la nube** — la nube almacena únicamente coordenadas del centro de la zona, nunca trayectorias GPS individuales
+
+---
+
+## Stack Tecnológico
 
 <div align="center">
 
@@ -181,20 +181,26 @@ pnpm run deploy
 
 ---
 
-## Related Projects
+## Proyectos Relacionados
 
-| Project | What it is |
-|---------|-----------|
-| [Lookitry](https://github.com/depper-IA/lookitry-showcase) | AI Virtual Try-On SaaS · Next.js · Supabase |
-| [kommo-mcp](https://github.com/depper-IA/kommo-mcp) | MCP server for Kommo CRM · Python · OAuth2 |
-| [Sammy](https://github.com/depper-IA/sammy) | AI Telegram assistant · TypeScript · SQLite |
-| [Rendertry](https://github.com/depper-IA/Rendertry) | Automotive customization visualizer · Vanilla JS |
-| [WilkieDevs](https://github.com/depper-IA/WilkieDevs) | Web automation platform · AI chatbot |
+| Proyecto | Descripción |
+|----------|-------------|
+| [Lookitry](https://github.com/depper-IA/lookitry-showcase) | SaaS de prueba virtual con IA · Next.js · Supabase |
+| [kommo-mcp](https://github.com/depper-IA/kommo-mcp) | Servidor MCP para Kommo CRM · Python · OAuth2 |
+| [Sammy](https://github.com/depper-IA/sammy) | Asistente de Telegram con IA · TypeScript · SQLite |
+| [Rendertry](https://github.com/depper-IA/Rendertry) | Visualizador de personalización automotriz · Vanilla JS |
+| [WilkieDevs](https://github.com/depper-IA/WilkieDevs) | Plataforma de automatización web · Chatbot de IA |
+
+---
+
+## Licencia
+
+Este proyecto está bajo la Licencia MIT. Consulta el archivo [LICENSE](LICENSE) para más detalles.
 
 ---
 
 <div align="center">
 
-*Built from Cali, Colombia — for whoever needs it.*
+*Desarrollado desde Cali, Colombia — para quien lo necesite.*
 
 </div>
