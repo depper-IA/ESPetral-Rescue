@@ -568,6 +568,15 @@
           }
           break;
 
+        case 'probability_update':
+          // Actualización del score compuesto de probabilidad (CSI + acústico + GPS)
+          // publicado por ScoringEngine tras cada recálculo (Req 11.5: ≤3s)
+          if (msg.zone_id && typeof msg.probability === 'number') {
+            // El score compuesto viene en escala 0-100; updateZoneFromTelemetry espera 0.0-1.0
+            updateZoneFromTelemetry(msg.zone_id, msg.probability / 100);
+          }
+          break;
+
         case 'node_status':
           // Mensaje de estado de nodo (LWT offline o reconexión online)
           if (msg.node_id && msg.zone_id) {

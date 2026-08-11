@@ -3,9 +3,9 @@
  *
  * Inicializa todos los componentes del sistema:
  * - Base de datos SQLite con SQLCipher
- * - Broker MQTT (Aedes) en puertos 1883 y 9001
+ * - Broker MQTT (Aedes) en puertos 1883 (MQTT nativo) y 9003 (WebSocket MQTT crudo, reservado)
  * - Motor de puntuación compuesta
- * - WebSocket relay para apps móviles (puerto 9002)
+ * - WebSocket relay JSON para apps móviles (puerto 9001, según design.md)
  * - Servidor Express con dashboard en puerto 3000
  * - Suscripción MQTT → dashboard para actualizaciones en tiempo real
  *
@@ -95,15 +95,42 @@ async function main() {
         // Mensaje de estado no es JSON válido — ignorar silenciosamente
       }
     }
+
+    // Filtrar actualizaciones de score compuesto: cali/zone/{zone_id}/probability
+    // Publicado por ScoringEngine tras cada recálculo (CSI, acústico o GPS).
+    // Reenviar al dashboard para que el marcador de zona refleje el score
+    // compuesto (no solo el motion_probability crudo de CSI).
+    const probabilityMatch = /^cali\/zone\/([a-zA-Z0-9_-]{1,64})\/probability$/.exec(packet.topic);
+    if (probabilityMatch) {
+      try {
+        const probabilityPayload = JSON.parse(
+          Buffer.isBuffer(packet.payload) ? packet.payload.toString('utf-8') : String(packet.payload)
+        );
+        if (probabilityPayload.zone_id && typeof probabilityPayload.probability === 'number') {
+          server.broadcastProbabilityUpdate(
+            probabilityPayload.zone_id,
+            probabilityPayload.probability,
+            probabilityPayload.sources,
+          );
+        }
+      } catch {
+        // Mensaje de probabilidad no es JSON válido — ignorar silenciosamente
+      }
+    }
   });
 
-  // 7. Inicializar WebSocket relay para apps móviles con callback de campo
+  // 7. Inicializar WebSocket relay para apps móviles con callbacks de campo y acústicos
   const relay = createWsRelay({
     db,
     mqttToken: MQTT_TOKEN,
     onFieldReport: (entry) => {
       // Cuando se almacena una ubicación desde la app móvil, notificar al dashboard
       server.broadcastFieldReport(entry);
+    },
+    onAcousticReport: (report) => {
+      // Reporte acústico almacenado: recalcular y publicar el score de la zona
+      // resuelta (Requisito 11.5: actualización dentro de 3 segundos)
+      scoringEngine.computeAndPublish(report.zone_id);
     },
   });
   console.log('[cali] WebSocket relay para apps móviles iniciado');

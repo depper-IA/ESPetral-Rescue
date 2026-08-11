@@ -1,7 +1,11 @@
 /**
  * CALI Rescue System — Broker MQTT con autenticación PSK y validación de mensajes
  *
- * Configura Aedes en puerto 1883 (MQTT) y 9001 (WebSocket).
+ * Configura Aedes en puerto 1883 (MQTT nativo) y 9003 (WebSocket MQTT crudo).
+ * El puerto WebSocket de Aedes está reservado para futuros clientes MQTT-sobre-WS
+ * en navegador: hoy ningún cliente real lo usa (los ESP32 se conectan por
+ * MQTT+TLS en 8883, y la app móvil usa el protocolo JSON del relay en
+ * `ws-relay.ts`, puerto 9001, según design.md).
  * Implementa autenticación por token pre-compartido, validación de esquema JSON
  * en mensajes CSI, rechazo de payloads >1KB, keep-alive de 60s con desconexión
  * a los 90s (1.5x), y Last Will and Testament para mensajes de estado offline.
@@ -21,8 +25,12 @@ import type { CsiTelemetryMessage } from './types.js';
 /** Puerto por defecto para conexiones MQTT TCP */
 export const DEFAULT_MQTT_PORT = 1883;
 
-/** Puerto por defecto para conexiones WebSocket */
-export const DEFAULT_WS_PORT = 9001;
+/**
+ * Puerto por defecto para conexiones WebSocket MQTT crudo de Aedes.
+ * Distinto de 9001 (relay JSON de apps móviles en `ws-relay.ts`) para evitar
+ * colisión de puertos — ver comentario del encabezado del archivo.
+ */
+export const DEFAULT_WS_PORT = 9003;
 
 /** Tamaño máximo de payload en bytes (1KB) */
 export const MAX_PAYLOAD_BYTES = 1024;
@@ -144,7 +152,7 @@ export function buildLastWillPayload(nodeId: string, zoneId: string): string {
 export interface MqttBrokerOptions {
   /** Puerto TCP para MQTT (default: 1883) */
   mqttPort?: number;
-  /** Puerto HTTP para WebSocket (default: 9001) */
+  /** Puerto HTTP para WebSocket MQTT crudo (default: 9003, reservado) */
   wsPort?: number;
   /**
    * Set de tokens válidos para autenticación PSK.

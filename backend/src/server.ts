@@ -62,6 +62,12 @@ export interface ServerInstance {
   broadcastFieldReport(entry: FieldReportEntry): void;
   /** Envía actualización de estado de un nodo ESP32 (online/offline) al dashboard */
   broadcastNodeStatus(nodeId: string, zoneId: string, status: 'online' | 'offline'): void;
+  /** Envía el score compuesto de probabilidad recién calculado (CSI + acústico + GPS) al dashboard */
+  broadcastProbabilityUpdate(
+    zoneId: string,
+    probability: number,
+    sources?: { csi: number | null; acoustic: number | null; gps: number | null },
+  ): void;
 }
 
 /** Fila de zona tal como se almacena en SQLite */
@@ -204,6 +210,25 @@ export function createDashboardServer(options: ServerOptions): ServerInstance {
     }
   }
 
+  function broadcastProbabilityUpdate(
+    zoneId: string,
+    probability: number,
+    sources?: { csi: number | null; acoustic: number | null; gps: number | null },
+  ): void {
+    const message = JSON.stringify({
+      type: 'probability_update',
+      zone_id: zoneId,
+      probability,
+      ...(sources && { sources }),
+    });
+
+    for (const client of wss.clients) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    }
+  }
+
   // --- Control del servidor ---
 
   function start(): Promise<void> {
@@ -239,6 +264,7 @@ export function createDashboardServer(options: ServerOptions): ServerInstance {
     broadcastZoneAdded,
     broadcastFieldReport,
     broadcastNodeStatus,
+    broadcastProbabilityUpdate,
   };
 }
 

@@ -130,5 +130,17 @@ describe('Dashboard Server', () => {
         });
       }).not.toThrow();
     });
+
+    it('broadcastProbabilityUpdate no lanza error sin clientes conectados', () => {
+      expect(() => {
+        server.broadcastProbabilityUpdate('zone-1', 72, { csi: 60, acoustic: 40, gps: null });
+      }).not.toThrow();
+    });
+
+    it('broadcastProbabilityUpdate no lanza error sin sources', () => {
+      expect(() => {
+        server.broadcastProbabilityUpdate('zone-1', 30);
+      }).not.toThrow();
+    });
   });
 });

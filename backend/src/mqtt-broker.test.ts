@@ -15,8 +15,10 @@ import {
   buildLastWillTopic,
   KEEP_ALIVE_LIMIT,
   KEEP_ALIVE_SECONDS,
+  DEFAULT_WS_PORT,
   type MqttBrokerInstance,
 } from './mqtt-broker.js';
+import { DEFAULT_RELAY_PORT } from './ws-relay.js';
 
 // --- Tests de validación de payload CSI (puro, sin broker) ---
 
@@ -687,5 +689,14 @@ describe('Keep-alive configuration', () => {
 
   it('tiempo de desconexión es 90 segundos', () => {
     expect(KEEP_ALIVE_SECONDS * KEEP_ALIVE_LIMIT).toBe(90);
+  });
+});
+
+// --- Tests de asignación de puertos por defecto (Req 7.1) ---
+
+describe('DEFAULT_WS_PORT (WebSocket MQTT crudo de Aedes)', () => {
+  it('no colisiona con el puerto del relay JSON de apps móviles (9001, design.md)', () => {
+    expect(DEFAULT_WS_PORT).not.toBe(DEFAULT_RELAY_PORT);
+    expect(DEFAULT_WS_PORT).not.toBe(9001);
   });
 });
