@@ -13,7 +13,7 @@ import Aedes, { type Client, type AuthenticateError, type PublishPacket } from '
 import { createServer, type Server as NetServer } from 'net';
 import { createServer as createHttpServer, type Server as HttpServer } from 'http';
 import { WebSocketServer, createWebSocketStream } from 'ws';
-import type Database from 'better-sqlite3-multiple-ciphers';
+import type Database from 'better-sqlite3';
 import type { CsiTelemetryMessage } from './types.js';
 
 // --- Constantes de configuración por defecto ---
@@ -194,14 +194,16 @@ export function createMqttBroker(options: MqttBrokerOptions = {}): MqttBrokerIns
     db,
   } = options;
 
-  // Crear instancia de Aedes con configuración de conexiones y keep-alive
+  // Crear instancia de Aedes con configuración de conexiones y keep-alive.
+  //
+  // Nota: Aedes aplica automáticamente el multiplicador 1.5x sobre el keep-alive
+  // declarado por el cliente (especificación MQTT [MQTT-3.1.2-24]), por lo que
+  // NO usamos `keepaliveLimit` — esa opción limita el valor MÁXIMO permitido
+  // (un cliente con keepalive=60 sería rechazado porque 60 > cualquier valor
+  // pequeño). El default 0 (sin límite) respeta a todos los clientes ESP32/mqtt.js.
   const aedes = new Aedes({
     concurrency: MAX_CONNECTIONS * 10,
     heartbeatInterval: 30_000,
-    // Multiplicador de keep-alive: desconectar tras 1.5x el intervalo declarado
-    // Con keep-alive de 60s, el cliente se desconecta a los 90s sin PINGREQ
-    keepaliveLimit: KEEP_ALIVE_LIMIT,
-    // Timeout de conexión: máximo 30s para completar el handshake CONNECT
     connectTimeout: 30_000,
   });
 
