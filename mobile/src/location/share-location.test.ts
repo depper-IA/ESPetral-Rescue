@@ -14,6 +14,7 @@ import {
   shareLocation,
   isShareAvailable,
   isClipboardAvailable,
+  showClipboardConfirmation,
 } from './share-location';
 
 // --- Helpers ---
@@ -39,7 +40,7 @@ describe('formatShareText', () => {
     const text = formatShareText(entry);
     const lines = text.split('\n');
 
-    expect(lines[0]).toBe('📍 Ubicación registrada');
+    expect(lines[0]).toBe('Ubicación registrada');
     expect(lines[1]).toMatch(/^Fecha: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
     expect(lines[2]).toBe('Precisión: 12.5m');
     expect(lines[3]).toBe('Nota: Posible señal en sector norte');
@@ -255,7 +256,7 @@ describe('Property 4: formatShareText completeness', () => {
         const lines = text.split('\n');
 
         // Línea 0: header
-        expect(lines[0]).toBe('📍 Ubicación registrada');
+        expect(lines[0]).toBe('Ubicación registrada');
 
         // Línea 1: timestamp (fecha formateada)
         expect(lines[1]).toMatch(/^Fecha: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
@@ -288,5 +289,120 @@ describe('Property 4: formatShareText completeness', () => {
       }),
       { numRuns: 100 }
     );
+  });
+});
+
+// --- Tests: showClipboardConfirmation (Req 2.4) ---
+// Requiere DOM real — usamos jsdom solo para este describe block.
+
+/** @vitest-environment jsdom */
+describe('showClipboardConfirmation', () => {
+  beforeEach(() => {
+    // Limpiar cualquier toast residual
+    document.querySelectorAll('[data-testid="cali-clipboard-toast"]').forEach(el => el.remove());
+    document.getElementById('cali-clipboard-toast-styles')?.remove();
+  });
+
+  it('debe crear un toast en el DOM con role=status', () => {
+    const dismiss = showClipboardConfirmation();
+
+    const toast = document.querySelector('[data-testid="cali-clipboard-toast"]');
+    expect(toast).not.toBeNull();
+    expect(toast?.getAttribute('role')).toBe('status');
+    expect(toast?.getAttribute('aria-live')).toBe('polite');
+    expect(toast?.textContent).toBe('Copiado al portapapeles');
+
+    dismiss(); // cleanup
+  });
+
+  it('debe usar mensaje custom cuando se provee', () => {
+    const dismiss = showClipboardConfirmation('Ubicación copiada');
+
+    const toast = document.querySelector('[data-testid="cali-clipboard-toast"]');
+    expect(toast?.textContent).toBe('Ubicación copiada');
+
+    dismiss();
+  });
+
+  it('debe eliminarse automáticamente después de durationMs (default 2000)', () => {
+    vi.useFakeTimers();
+    try {
+      showClipboardConfirmation();
+
+      expect(document.querySelector('[data-testid="cali-clipboard-toast"]')).not.toBeNull();
+
+      // Avanzar tiempo a 1999ms — toast aún presente
+      vi.advanceTimersByTime(1999);
+      expect(document.querySelector('[data-testid="cali-clipboard-toast"]')).not.toBeNull();
+
+      // Avanzar 1ms más — toast debe haberse eliminado
+      vi.advanceTimersByTime(1);
+      expect(document.querySelector('[data-testid="cali-clipboard-toast"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('debe respetar durationMs custom', () => {
+    vi.useFakeTimers();
+    try {
+      showClipboardConfirmation('Copiado', 500);
+
+      expect(document.querySelector('[data-testid="cali-clipboard-toast"]')).not.toBeNull();
+
+      vi.advanceTimersByTime(499);
+      expect(document.querySelector('[data-testid="cali-clipboard-toast"]')).not.toBeNull();
+
+      vi.advanceTimersByTime(1);
+      expect(document.querySelector('[data-testid="cali-clipboard-toast"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('la función de cancelación manual debe eliminar el toast antes del timeout', () => {
+    vi.useFakeTimers();
+    try {
+      const dismiss = showClipboardConfirmation();
+
+      expect(document.querySelector('[data-testid="cali-clipboard-toast"]')).not.toBeNull();
+
+      dismiss();
+
+      expect(document.querySelector('[data-testid="cali-clipboard-toast"]')).toBeNull();
+
+      // Avanzar el tiempo: no debe haber errores ni recrear el toast
+      vi.advanceTimersByTime(5000);
+      expect(document.querySelector('[data-testid="cali-clipboard-toast"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('debe inyectar estilos CSS de animación una sola vez', () => {
+    showClipboardConfirmation();
+    const firstStyle = document.getElementById('cali-clipboard-toast-styles');
+    expect(firstStyle).not.toBeNull();
+
+    showClipboardConfirmation();
+    showClipboardConfirmation();
+    const styles = document.querySelectorAll('#cali-clipboard-toast-styles');
+    expect(styles.length).toBe(1);
+
+    document.querySelectorAll('[data-testid="cali-clipboard-toast"]').forEach(el => el.remove());
+  });
+
+  it('debe ser SSR-safe: retornar función no-op si no hay document', () => {
+    const originalDocument = globalThis.document;
+    (globalThis as { document?: Document }).document = undefined;
+
+    try {
+      const dismiss = showClipboardConfirmation('test');
+      expect(typeof dismiss).toBe('function');
+      // No debe lanzar al invocarla
+      expect(() => dismiss()).not.toThrow();
+    } finally {
+      globalThis.document = originalDocument;
+    }
   });
 });

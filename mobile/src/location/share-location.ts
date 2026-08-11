@@ -4,6 +4,9 @@
  * usando la API nativa del navegador, con fallback a clipboard.
  *
  * Requisitos: 2.1, 2.2, 2.3, 2.4
+ *
+ * Nota sobre emojis: la regla del proyecto es "sin emojis en interfaces".
+ * Este módulo NO usa emojis en el texto de compartir (Req 2.4 visualización).
  */
 
 import type { LocationEntry } from './location-engine';
@@ -27,7 +30,7 @@ export function formatShareText(entry: LocationEntry): string {
   const mapsLink = `https://maps.google.com/?q=${entry.lat},${entry.lon}`;
 
   return [
-    '📍 Ubicación registrada',
+    'Ubicación registrada',
     `Fecha: ${formattedDate}`,
     `Precisión: ${entry.accuracy}m`,
     `Nota: ${entry.note}`,
@@ -135,4 +138,92 @@ export async function shareLocation(entry: LocationEntry | null | undefined): Pr
     method: 'none',
     message: 'Compartir no disponible en este dispositivo',
   };
+}
+
+// --- Confirmación visual post-clipboard (Req 2.4) ---
+
+/**
+ * ID del elemento <style> que contiene la animación del toast.
+ * Se inyecta una sola vez por página.
+ */
+const TOAST_STYLE_ID = 'cali-clipboard-toast-styles';
+
+/**
+ * Muestra un toast DOM de confirmación por la duración especificada.
+ *
+ * Requisito 2.4: cuando se hace fallback a clipboard copy (porque Web Share
+ * no está disponible), el usuario debe recibir confirmación visual durante
+ * al menos 2 segundos. Esta función provee ese feedback.
+ *
+ * - Inserta un `<div role="status" aria-live="polite">` al final del body
+ * - Se elimina automáticamente después de `durationMs` (default 2000)
+ * - Retorna función de cancelación manual (útil en tests o si el componente
+ *   se desmonta antes del cleanup)
+ *
+ * SSR-safe: si `document` no existe, retorna una función no-op.
+ */
+export function showClipboardConfirmation(
+  message = 'Copiado al portapapeles',
+  durationMs = 2000
+): () => void {
+  // SSR safety — no-op si no hay DOM
+  if (typeof document === 'undefined') {
+    return () => {};
+  }
+
+  // Inyectar keyframes de animación una sola vez
+  if (!document.getElementById(TOAST_STYLE_ID)) {
+    const style = document.createElement('style');
+    style.id = TOAST_STYLE_ID;
+    style.textContent = `
+      @keyframes cali-clipboard-toast-in {
+        from { opacity: 0; transform: translate(-50%, 16px); }
+        to { opacity: 1; transform: translate(-50%, 0); }
+      }
+      @keyframes cali-clipboard-toast-out {
+        from { opacity: 1; transform: translate(-50%, 0); }
+        to { opacity: 0; transform: translate(-50%, 8px); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  const toast = document.createElement('div');
+  toast.setAttribute('role', 'status');
+  toast.setAttribute('aria-live', 'polite');
+  toast.setAttribute('data-testid', 'cali-clipboard-toast');
+  toast.textContent = message;
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(33, 37, 41, 0.92);
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    z-index: 10000;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    animation: cali-clipboard-toast-in 200ms ease-out;
+  `;
+
+  document.body.appendChild(toast);
+
+  const dismiss = (): void => {
+    if (toast.parentNode) {
+      toast.parentNode.removeChild(toast);
+    }
+    clearTimeout(timerId);
+  };
+
+  const timerId = setTimeout(() => {
+    if (toast.parentNode) {
+      toast.parentNode.removeChild(toast);
+    }
+  }, durationMs);
+
+  return dismiss;
 }
