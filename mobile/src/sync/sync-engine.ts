@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Motor de sincronización WebSocket
+ * ESPetral Rescue — Motor de sincronización WebSocket
  *
  * Conecta la app móvil al relay WebSocket del backend (puerto 9001).
  * Protocolo JSON (no MQTT directo): recibe alertas CSI de zonas,

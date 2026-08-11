@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Servidor Express + Dashboard
+ * ESPetral Rescue — Servidor Express + Dashboard
  *
  * Sirve el panel de control estático en el puerto 3000 y expone
  * una API REST para consultar zonas registradas. También provee

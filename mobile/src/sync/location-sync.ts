@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Funciones puras de sincronización de entradas de ubicación
+ * ESPetral Rescue — Funciones puras de sincronización de entradas de ubicación
  *
  * Extraídas para facilitar property-based testing, siguiendo el mismo patrón
  * usado en `audio-processing.ts` y `knock-detection.ts`.

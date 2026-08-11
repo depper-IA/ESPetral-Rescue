@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Core TypeScript Interfaces
+ * ESPetral Rescue — Core TypeScript Interfaces
  *
  * Defines message schemas and data models for the backend server,
  * MQTT broker communication, and WebSocket relay.

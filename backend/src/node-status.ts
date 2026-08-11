@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Lógica de estado de nodos ESP32
+ * ESPetral Rescue — Lógica de estado de nodos ESP32
  *
  * Módulo compartido que implementa la clasificación online/offline
  * de nodos basada en timeout de 30 segundos sin mensajes.

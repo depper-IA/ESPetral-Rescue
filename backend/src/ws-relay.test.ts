@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Tests para el WebSocket Relay de apps móviles
+ * ESPetral Rescue — Tests para el WebSocket Relay de apps móviles
  *
  * Verifica validación de batches, deduplicación de entradas,
  * almacenamiento en SQLite y protocolo de mensajes.

@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Tests unitarios para el motor de puntuación compuesta
+ * ESPetral Rescue — Tests unitarios para el motor de puntuación compuesta
  *
  * Valida la redistribución de pesos, exclusión por staleness,
  * umbral de alerta prioritaria, y cálculo compuesto correcto.

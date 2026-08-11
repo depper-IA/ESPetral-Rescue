@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Hook de sincronización de entradas de ubicación con ack
+ * ESPetral Rescue — Hook de sincronización de entradas de ubicación con ack
  *
  * Transmite entradas no sincronizadas en lotes cronológicos de a lo sumo 50,
  * esperando el acknowledgment del backend antes de enviar el siguiente lote.

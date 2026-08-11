@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Identificador local de dispositivo (device_token)
+ * ESPetral Rescue — Identificador local de dispositivo (device_token)
  *
  * Usado para asociar entradas de ubicación y reportes acústicos sincronizados
  * con el backend. NO es un token de autenticación — es solo un identificador

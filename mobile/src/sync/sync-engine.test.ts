@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Tests del motor de sincronización WebSocket
+ * ESPetral Rescue — Tests del motor de sincronización WebSocket
  *
  * Incluye tests unitarios y property-based tests para el SyncEngine.
  * Requisitos validados: 8.1, 8.2, 8.3, 8.4, 8.5

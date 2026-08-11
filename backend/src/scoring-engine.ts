@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Motor de puntuación compuesta de probabilidad
+ * ESPetral Rescue — Motor de puntuación compuesta de probabilidad
  *
  * Calcula un Probability_Indicator por zona combinando tres fuentes:
  * - CSI (Wi-Fi Channel State Information): peso base 50%
@@ -185,7 +185,7 @@ export interface ScoringEngineOptions {
 }
 
 /**
- * Motor de puntuación compuesta para el sistema CALI Rescue.
+ * Motor de puntuación compuesta para el sistema ESPetral Rescue.
  *
  * Consulta la base de datos para obtener los últimos datos por zona,
  * calcula el puntaje compuesto, y publica actualizaciones y alertas

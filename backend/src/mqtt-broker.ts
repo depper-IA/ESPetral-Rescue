@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Broker MQTT con autenticación PSK y validación de mensajes
+ * ESPetral Rescue — Broker MQTT con autenticación PSK y validación de mensajes
  *
  * Configura Aedes en puerto 1883 (MQTT nativo) y 9003 (WebSocket MQTT crudo).
  * El puerto WebSocket de Aedes está reservado para futuros clientes MQTT-sobre-WS

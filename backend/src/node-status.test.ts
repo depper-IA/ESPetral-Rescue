@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Tests para estado de nodos ESP32
+ * ESPetral Rescue — Tests para estado de nodos ESP32
  *
  * Feature: cali-rescue-system, Property 9: Node online/offline classification
  * Requisitos: 7.5, 7.6

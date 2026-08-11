@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Tests para el módulo de base de datos
+ * ESPetral Rescue — Tests para el módulo de base de datos
  *
  * Verifica la creación del esquema, índices y la purga automática de datos.
  */

@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Tests para funciones de tipos
+ * ESPetral Rescue — Tests para funciones de tipos
  *
  * Verifica que la función probabilityToColor mapea correctamente
  * los valores de probabilidad a los colores del dashboard.

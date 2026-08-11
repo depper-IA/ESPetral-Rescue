@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — WebSocket Relay para conexiones de apps móviles
+ * ESPetral Rescue — WebSocket Relay para conexiones de apps móviles
  *
  * Servidor WebSocket en puerto 9001 (según design.md: "Mobile App → Backend |
  * WebSocket Secure | 9001") que conecta apps móviles al broker MQTT.

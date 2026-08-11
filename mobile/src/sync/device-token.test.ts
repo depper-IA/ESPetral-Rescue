@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Tests para el identificador local de dispositivo
+ * ESPetral Rescue — Tests para el identificador local de dispositivo
  *
  * Requisitos: 13.1 (device_token requerido por el protocolo de sync)
  *

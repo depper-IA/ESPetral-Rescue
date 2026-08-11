@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Tests para las funciones puras de sincronización de ubicaciones
+ * ESPetral Rescue — Tests para las funciones puras de sincronización de ubicaciones
  *
  * Feature: cali-rescue-system, Property 19: Location sync batching
  * Requisitos: 13.1, 13.2, 13.5

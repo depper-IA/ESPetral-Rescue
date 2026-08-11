@@ -1,5 +1,5 @@
 /**
- * CALI Rescue System — Módulo de base de datos SQLite
+ * ESPetral Rescue — Módulo de base de datos SQLite
  *
  * Crea el esquema completo, índices para consultas de expiración,
  * y un daemon de purga automática con TTL de 72 horas (ejecuta cada 15 minutos).
