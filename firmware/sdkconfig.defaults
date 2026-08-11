@@ -1,9 +1,13 @@
-# CALI CSI Node - Default SDK Configuration
-# Target: ESP32-C6
+# CALI CSI Node - Default SDK Configuration (común a todos los targets)
+#
+# Target selection (no se define aquí, usar `idf.py set-target`):
+#   idf.py set-target esp32s3    # o esp32c6 / esp32c3
+#
+# Defaults por chip (LED GPIO):
+# Ver sdkconfig.defaults.esp32c3, .esp32c6, .esp32s3
+# Esos archivos se aplican DESPUÉS de este según docs de ESP-IDF v5.
 
-CONFIG_IDF_TARGET="esp32c6"
-
-# Partition table
+# Partition table (común a los 3 targets)
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
@@ -14,7 +18,7 @@ CONFIG_NVS_ENCRYPTION=n
 CONFIG_ESP_WIFI_MODE_STA=y
 CONFIG_ESP_WIFI_CSI_ENABLED=y
 
-# MQTT
+# MQTT (v3.1.1 — protocolVersion 4 en cliente, igual que C6/S3/C3)
 CONFIG_MQTT_PROTOCOL_5=n
 
 # Power management

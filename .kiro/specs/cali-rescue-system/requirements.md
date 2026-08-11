@@ -2,13 +2,13 @@
 
 ## Introduction
 
-Integrated search and rescue detection system for the Cali disaster response. Combines acoustic detection, Wi-Fi CSI motion sensing (via ESP32-C6 nodes), and GPS location logging into a unified field tool that maximizes the probability of locating trapped survivors. The system comprises three deliverables: an enhanced single-file mobile web app, a Node.js backend with MQTT broker, and ESP32 firmware for Wi-Fi CSI detection.
+Integrated search and rescue detection system for the Cali disaster response. Combines acoustic detection, Wi-Fi CSI motion sensing (via ESP32 nodes — multi-target: ESP32-S3, ESP32-C6, or ESP32-C3), and GPS location logging into a unified field tool that maximizes the probability of locating trapped survivors. The system comprises three deliverables: an enhanced single-file mobile web app, a Node.js backend with MQTT broker, and ESP32 firmware for Wi-Fi CSI detection.
 
 ## Glossary
 
 - **Mobile_App**: The single-file HTML/CSS/JS progressive web application used by rescue teams in the field on Android phones
 - **Backend**: Node.js server running on a laptop at the rescue site, hosting the MQTT broker and WebSocket relay
-- **ESP32_Node**: An ESP32-C6 Super Mini device running CSI detection firmware, deployed around rubble zones
+- **ESP32_Node**: An ESP32 device (target: ESP32-S3, ESP32-C6, or ESP32-C3 depending on donated hardware) running CSI detection firmware, deployed around rubble zones. The same firmware source compiles for all three chips via `idf.py set-target <chip>`.
 - **MQTT_Broker**: Message broker (Aedes or Mosquitto) running on the Backend that relays ESP32_Node telemetry
 - **CSI**: Channel State Information — Wi-Fi subcarrier amplitude/phase data used to detect micro-movements
 - **Zone**: A logical area of the rescue site where one or more ESP32_Nodes are deployed

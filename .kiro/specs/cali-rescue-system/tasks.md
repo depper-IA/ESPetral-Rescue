@@ -2,7 +2,7 @@
 
 ## Overview
 
-Integrated search-and-rescue detection system combining acoustic detection, Wi-Fi CSI motion sensing (ESP32-C6), and GPS location logging. The implementation spans three tiers: a single-file mobile web app, a Node.js backend with MQTT broker, and ESP32 firmware. Tasks are ordered to build foundational infrastructure first, then layer detection capabilities, and finally wire everything together.
+Integrated search-and-rescue detection system combining acoustic detection, Wi-Fi CSI motion sensing (multi-target: ESP32-S3, ESP32-C6, or ESP32-C3), and GPS location logging. The implementation spans three tiers: a single-file mobile web app, a Node.js backend with MQTT broker, and ESP32 firmware. Tasks are ordered to build foundational infrastructure first, then layer detection capabilities, and finally wire everything together.
 
 ## Tasks
 

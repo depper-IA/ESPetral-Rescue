@@ -2,13 +2,13 @@
 
 ## Overview
 
-The CALI Rescue System is a multi-component field tool for search and rescue operations following the Cali disaster. It integrates acoustic knock detection, Wi-Fi Channel State Information (CSI) motion sensing via ESP32-C6 nodes, GPS location logging, and a unified probability scoring engine into a secure, local-network architecture.
+The CALI Rescue System is a multi-component field tool for search and rescue operations following the Cali disaster. It integrates acoustic knock detection, Wi-Fi Channel State Information (CSI) motion sensing via ESP32 nodes (multi-target: ESP32-S3, ESP32-C6, or ESP32-C3), GPS location logging, and a unified probability scoring engine into a secure, local-network architecture.
 
 The system comprises three deliverables:
 
 1. **Enhanced Mobile PWA** — A single-file HTML progressive web app with offline-first acoustic detection, GPS logging, map view, WebSocket connectivity to backend, and data sync.
 2. **Secure Local Backend** — A Node.js server running on a laptop at the rescue site with an Aedes MQTT broker, Express HTTP server, SQLite database, real-time dashboard, and probability scoring engine.
-3. **ESP32 CSI Firmware** — ESP-IDF firmware based on the official `espressif/esp-csi` framework for ESP32-C6 Super Mini nodes, implementing motion detection via subcarrier amplitude variance analysis.
+3. **ESP32 CSI Firmware** — ESP-IDF firmware, target-agnostic, compilable para ESP32-S3, ESP32-C6 o ESP32-C3 vía `idf.py set-target <chip>`. Implementa motion detection vía subcarrier amplitude variance analysis. El API CSI (`esp_wifi_set_csi()` + `WIFI_EVENT_CSI` callback) es idéntico en los 3 targets — la lógica de detección no requiere condicionales por chip. Defaults específicos por chip en `sdkconfig.defaults.<target>` (LED GPIO, CPU freq).
 
 ### Security Posture
 
@@ -39,9 +39,9 @@ graph TB
     end
 
     subgraph "Rubble Zone"
-        E1[ESP32-C6 Node 1]
-        E2[ESP32-C6 Node 2]
-        E3[ESP32-C6 Node N]
+        E1[ESP32 Node (S3/C6/C3) 1]
+        E2[ESP32 Node (S3/C6/C3) 2]
+        E3[ESP32 Node (S3/C6/C3) N]
     end
 
     E1 -->|MQTT+TLS| MB

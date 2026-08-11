@@ -15,8 +15,21 @@ extern "C" {
 #define NVS_NAMESPACE "cali_config"
 
 /**
- * GPIO pin for onboard LED (ESP32-C6 Super Mini).
- * Override via menuconfig or compiler define if board differs.
+ * GPIO pin for onboard LED.
+ *
+ * Definido vía menuconfig (`idf.py menuconfig` → "CALI CSI Node
+ * Configuration" → "GPIO pin for onboard LED indicator"). El default
+ * se establece en `sdkconfig.defaults.<target>` por chip:
+ *
+ *   - ESP32-C3 (DevKitM-1, Super Mini): GPIO 8
+ *   - ESP32-C6 (Super Mini):            GPIO 8
+ *   - ESP32-S3 (Zero/Super Mini):       GPIO 21
+ *   - ESP32-S3 (DevKitC-1 RGB):         GPIO 48 (requiere driver WS2812)
+ *
+ * Override runtime via build flag:  idf.py -DCONFIG_LED_GPIO=21 build
+ *
+ * Si no se define (no se corrió menuconfig ni se pasó -D), se usa 8
+ * como fallback compatible con C3/C6 Super Mini.
  */
 #ifndef CONFIG_LED_GPIO
 #define CONFIG_LED_GPIO 8

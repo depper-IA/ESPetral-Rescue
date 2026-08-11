@@ -1,6 +1,11 @@
 /**
  * @file main.c
- * @brief Punto de entrada del firmware CALI CSI Node (ESP32-C6).
+ * @brief Punto de entrada del firmware CALI CSI Node.
+ *
+ * Target-agnostic: compila para ESP32-S3, ESP32-C6 o ESP32-C3 vía
+ * `idf.py set-target`. El API CSI (esp_wifi_set_csi + WIFI_EVENT_CSI)
+ * es idéntico en los 3 targets, por lo que la lógica no requiere
+ * condicionales de compilación por target.
  *
  * Inicializa NVS, lee la configuración del nodo, valida campos obligatorios,
  * inicializa Wi-Fi en modo STA, configura el motor CSI y el transmisor de
@@ -46,8 +51,9 @@ static node_config_t s_node_config;
  * CSI. Extrae las amplitudes de subportadora de los datos I/Q crudos y
  * las alimenta al motor CSI.
  *
- * Los datos CSI del ESP32-C6 vienen como pares (I, Q) de int8_t para cada
- * subportadora. La amplitud se calcula como sqrt(I² + Q²).
+ * Los datos CSI vienen como pares (I, Q) de int8_t para cada subportadora.
+ * El formato es idéntico en ESP32-S3 / ESP32-C6 / ESP32-C3.
+ * La amplitud se calcula como sqrt(I² + Q²).
  */
 static void wifi_csi_rx_callback(void *ctx, wifi_csi_info_t *info)
 {

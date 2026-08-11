@@ -2,9 +2,9 @@
  * @file power_mgmt.c
  * @brief Implementación de gestión de energía para nodo CALI CSI.
  *
- * Configura light-sleep automático del ESP32-C6 entre ciclos de medición
- * CSI. El objetivo es mantener un consumo promedio <80mA sobre una
- * ventana de 60 segundos.
+ * Configura light-sleep automático del ESP32-S3 / ESP32-C6 / ESP32-C3 entre
+ * ciclos de medición CSI. El objetivo es mantener un consumo promedio
+ * <80mA sobre una ventana de 60 segundos.
  *
  * Estrategia:
  * - El ciclo de cálculo CSI ejecuta cada 2 segundos (~50ms activo).
@@ -29,18 +29,21 @@ static bool s_pm_active = false;
 
 esp_err_t power_mgmt_init(void)
 {
-    /*
-     * Configurar Power Management del ESP32-C6.
-     *
-     * - max_freq_mhz = 160: frecuencia máxima durante trabajo activo (CSI compute).
-     * - min_freq_mhz = 10: frecuencia mínima cuando idle (ahorro de energía).
-     * - light_sleep_enable = true: permite al sistema entrar en light-sleep
-     *   automáticamente cuando todas las tareas están en espera (vTaskDelay).
-     *
-     * En light-sleep el ESP32-C6 consume ~1-5mA vs ~80-120mA activo.
-     * El duty cycle de 2s (activo ~100ms, sleep ~1900ms) resulta en un
-     * promedio bien por debajo de los 80mA requeridos.
-     */
+/*
+      * Configurar Power Management (target-agnostic: ESP32-S3 / ESP32-C6 / ESP32-C3).
+      *
+      * - max_freq_mhz = 160: frecuencia máxima durante trabajo activo (CSI compute).
+      * - min_freq_mhz = 10: frecuencia mínima cuando idle (ahorro de energía).
+      * - light_sleep_enable = true: permite al sistema entrar en light-sleep
+      *   automáticamente cuando todas las tareas están en espera (vTaskDelay).
+      *
+      * Consumo en light-sleep varía por target:
+      *   ESP32-C3 (RISC-V single core):   ~0.5–2 mA
+      *   ESP32-C6 (RISC-V single core):   ~1–5 mA
+      *   ESP32-S3 (Xtensa LX7 dual core): ~3–10 mA
+      * El duty cycle de 2s (activo ~100ms, sleep ~1900ms) resulta en un
+      * promedio bien por debajo de los 80mA requeridos para los 3 targets.
+      */
     esp_pm_config_t pm_config = {
         .max_freq_mhz = 160,
         .min_freq_mhz = 10,
