@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   classifyKnockPattern,
+  computeKnockConfidence,
   computeSpectralCentroid,
   filterPeaksInWindow,
   isValidCentroid,
@@ -34,6 +35,8 @@ export interface KnockPatternEvent {
   meanInterval: number;
   /** Desviación estándar de intervalos (ms) */
   intervalStdDev: number;
+  /** Confianza de la detección [0,1], derivada de la variación de intervalos */
+  confidence: number;
 }
 
 export interface KnockDetectorState {
@@ -54,6 +57,12 @@ export interface KnockDetectorControls {
   stop: () => void;
   /** Registra un callback para eventos de patrón detectado */
   onPattern: (callback: (event: KnockPatternEvent) => void) => void;
+  /**
+   * Procesa un pico detectado por el motor de audio. Punto de integración
+   * explícito con `useAudioEngine`'s `onPeak` — reemplaza el acoplamiento
+   * implícito previo vía `window.__knockDetectorProcessPeak`.
+   */
+  processPeak: (timestamp: number) => void;
 }
 
 /**
@@ -76,9 +85,12 @@ export interface KnockDetectorOptions {
  * ```tsx
  * const [audioState, audioControls] = useAudioEngine();
  * const [knockState, knockControls] = useKnockDetector({
- *   analyserNode: audioEngine.analyserNode,
- *   sampleRate: audioEngine.sampleRate,
+ *   analyserNode: audioState.analyserNode,
+ *   sampleRate: audioState.sampleRate ?? undefined,
  * });
+ * // Conectar el pipeline: cada pico detectado por el audio engine
+ * // se procesa en el detector de patrones.
+ * audioControls.onPeak((timestamp) => knockControls.processPeak(timestamp));
  * ```
  */
 export function useKnockDetector(
@@ -153,6 +165,7 @@ export function useKnockDetector(
           peakCount: result.peakCount,
           meanInterval: result.meanInterval,
           intervalStdDev: result.intervalStdDev,
+          confidence: computeKnockConfidence(result.meanInterval, result.intervalStdDev),
         };
 
         // Vibración (manejar dispositivos sin soporte)
@@ -230,18 +243,7 @@ export function useKnockDetector(
     };
   }, []);
 
-  // Exponer processPeak para integración externa
-  // El hook useAudioEngine llama a processPeak cuando detecta un pico
-  useEffect(() => {
-    // Almacenar en ref global accesible para el hook de audio
-    (window as unknown as Record<string, unknown>).__knockDetectorProcessPeak =
-      processPeak;
-    return () => {
-      delete (window as unknown as Record<string, unknown>).__knockDetectorProcessPeak;
-    };
-  }, [processPeak]);
-
-  return [state, { start, stop, onPattern }];
+  return [state, { start, stop, onPattern, processPeak }];
 }
 
 /**

@@ -24,6 +24,14 @@ export interface AudioEngineState {
   isPeak: boolean;
   /** Marca temporal del último pico detectado */
   lastPeakTimestamp: number | null;
+  /**
+   * AnalyserNode del pipeline de audio, expuesto para integración con
+   * useKnockDetector (filtrado por centroide espectral). null si el motor
+   * no está activo.
+   */
+  analyserNode: AnalyserNode | null;
+  /** Tasa de muestreo del AudioContext activo, o null si no está activo */
+  sampleRate: number | null;
 }
 
 export interface AudioEngineControls {
@@ -31,6 +39,11 @@ export interface AudioEngineControls {
   start: () => Promise<void>;
   /** Detiene la captura de audio y libera recursos */
   stop: () => void;
+  /**
+   * Registra (o remueve, pasando null) un callback invocado en cada pico
+   * detectado. Punto de integración con useKnockDetector.
+   */
+  onPeak: (callback: ((timestamp: number) => void) | null) => void;
 }
 
 /**
@@ -48,6 +61,8 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
     noiseFloor: INITIAL_NOISE_FLOOR,
     isPeak: false,
     lastPeakTimestamp: null,
+    analyserNode: null,
+    sampleRate: null,
   });
 
   // Referencias internas para el pipeline de audio
@@ -148,6 +163,8 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
       noiseFloor: INITIAL_NOISE_FLOOR,
       isPeak: false,
       lastPeakTimestamp: null,
+      analyserNode: analyser,
+      sampleRate: audioContext.sampleRate,
     });
 
     // Iniciar loop de procesamiento
@@ -180,7 +197,16 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
       noiseFloor: INITIAL_NOISE_FLOOR,
       isPeak: false,
       lastPeakTimestamp: null,
+      analyserNode: null,
+      sampleRate: null,
     });
+  }, []);
+
+  // Registra o remueve (con null) el callback invocado en cada pico detectado.
+  // Punto de integración con useKnockDetector — reemplaza el acoplamiento
+  // implícito previo (ver historial de App.tsx).
+  const onPeak = useCallback((callback: ((timestamp: number) => void) | null) => {
+    onPeakCallbackRef.current = callback;
   }, []);
 
   // Cleanup al desmontar el componente
@@ -192,5 +218,5 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
     };
   }, [stop]);
 
-  return [state, { start, stop }];
+  return [state, { start, stop, onPeak }];
 }

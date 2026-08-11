@@ -13,6 +13,7 @@ import {
   CENTROID_MAX_HZ,
   CENTROID_MIN_HZ,
   classifyKnockPattern,
+  computeKnockConfidence,
   computeSpectralCentroid,
   filterPeaksInWindow,
   isValidCentroid,
@@ -152,6 +153,47 @@ describe('filterPeaksInWindow', () => {
     // windowStart = 10000 - 6000 = 4000
     const filtered = filterPeaksInWindow(peaks, now);
     expect(filtered).toEqual([4000, 5000]);
+  });
+});
+
+// --- Tests unitarios: Confianza del patrón detectado ---
+
+describe('computeKnockConfidence', () => {
+  it('retorna 1.0 cuando la desviación estándar es 0 (patrón perfectamente regular)', () => {
+    expect(computeKnockConfidence(500, 0)).toBe(1);
+  });
+
+  it('retorna 0 cuando meanInterval es 0 o negativo', () => {
+    expect(computeKnockConfidence(0, 10)).toBe(0);
+    expect(computeKnockConfidence(-100, 10)).toBe(0);
+  });
+
+  it('retorna un valor cercano a 0 cuando la variación se acerca al umbral máximo', () => {
+    const meanInterval = 500;
+    const stdDevAtThreshold = MAX_CV_RATIO * meanInterval;
+    expect(computeKnockConfidence(meanInterval, stdDevAtThreshold)).toBeCloseTo(0, 5);
+  });
+
+  it('nunca retorna valores fuera de [0, 1]', () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0.01, max: 5000, noNaN: true }),
+        fc.double({ min: 0, max: 10000, noNaN: true }),
+        (meanInterval, intervalStdDev) => {
+          const confidence = computeKnockConfidence(meanInterval, intervalStdDev);
+          expect(confidence).toBeGreaterThanOrEqual(0);
+          expect(confidence).toBeLessThanOrEqual(1);
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  it('es una función monótonamente decreciente respecto a intervalStdDev', () => {
+    const meanInterval = 600;
+    const lower = computeKnockConfidence(meanInterval, 50);
+    const higher = computeKnockConfidence(meanInterval, 150);
+    expect(lower).toBeGreaterThan(higher);
   });
 });
 

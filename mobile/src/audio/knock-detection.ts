@@ -175,6 +175,29 @@ export function shouldEmitAlert(
   return currentTimestamp - lastAlertTimestamp >= ALERT_COOLDOWN_MS;
 }
 
+// --- Confianza del patrón detectado ---
+
+/**
+ * Calcula un valor de confianza [0,1] para un patrón de golpe detectado,
+ * basado en qué tan por debajo del umbral máximo de variación (MAX_CV_RATIO)
+ * cae la desviación estándar de los intervalos respecto a la media.
+ * Menor variación relativa → mayor confianza.
+ *
+ * Usado al enviar el reporte acústico al backend (Requisito 11.5).
+ *
+ * @param meanInterval - Intervalo medio entre picos (ms)
+ * @param intervalStdDev - Desviación estándar de los intervalos (ms)
+ * @returns Confianza en [0,1], o 0 si meanInterval es 0 o negativo
+ */
+export function computeKnockConfidence(meanInterval: number, intervalStdDev: number): number {
+  if (meanInterval <= 0) return 0;
+
+  const cvRatio = intervalStdDev / (MAX_CV_RATIO * meanInterval);
+  const confidence = 1 - cvRatio;
+
+  return Math.max(0, Math.min(1, confidence));
+}
+
 // --- Ventana deslizante de picos ---
 
 /**
