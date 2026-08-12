@@ -48,6 +48,8 @@ export interface KnockDetectorState {
   alertActive: boolean;
   /** Número de picos filtrados en la ventana actual */
   peaksInWindow: number;
+  /** Picos descartados por estar fuera del rango de centroide válido (300-3500 Hz) */
+  peaksFilteredByCentroid: number;
 }
 
 export interface KnockDetectorControls {
@@ -103,6 +105,7 @@ export function useKnockDetector(
     lastPattern: null,
     alertActive: false,
     peaksInWindow: 0,
+    peaksFilteredByCentroid: 0,
   });
 
   // Estado interno mutable
@@ -111,6 +114,7 @@ export function useKnockDetector(
   const isDetectingRef = useRef(false);
   const patternCallbackRef = useRef<((event: KnockPatternEvent) => void) | null>(null);
   const alertTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const peaksFilteredByCentroidRef = useRef<number>(0);
 
   /**
    * Procesa un pico detectado: calcula centroide espectral, filtra, y evalúa patrón.
@@ -130,6 +134,11 @@ export function useKnockDetector(
 
         // Descartar picos con centroide fuera de rango 300–3500 Hz
         if (!isValidCentroid(centroid)) {
+          peaksFilteredByCentroidRef.current += 1;
+          setState((prev) => ({
+            ...prev,
+            peaksFilteredByCentroid: peaksFilteredByCentroidRef.current,
+          }));
           return;
         }
       }
@@ -204,18 +213,21 @@ export function useKnockDetector(
     isDetectingRef.current = true;
     peakTimestampsRef.current = [];
     lastAlertTimestampRef.current = null;
+    peaksFilteredByCentroidRef.current = 0;
 
     setState({
       isDetecting: true,
       lastPattern: null,
       alertActive: false,
       peaksInWindow: 0,
+      peaksFilteredByCentroid: 0,
     });
   }, []);
 
   const stop = useCallback(() => {
     isDetectingRef.current = false;
     peakTimestampsRef.current = [];
+    peaksFilteredByCentroidRef.current = 0;
 
     if (alertTimeoutRef.current !== null) {
       clearTimeout(alertTimeoutRef.current);
@@ -227,6 +239,7 @@ export function useKnockDetector(
       lastPattern: null,
       alertActive: false,
       peaksInWindow: 0,
+      peaksFilteredByCentroid: 0,
     });
   }, []);
 

@@ -13,6 +13,8 @@ export interface ClearLogDialogProps {
   engine: LocationEngine;
   /** Callback invocado después de limpiar exitosamente */
   onCleared?: () => void;
+  /** Si es true, el botón de activación estará deshabilitado */
+  disabled?: boolean;
 }
 
 /**
@@ -40,7 +42,7 @@ export function useClearLogDialog(engine: LocationEngine, onCleared?: () => void
  * Presenta botones "Confirmar" y "Cancelar" con touch targets ≥48px.
  * El diálogo captura el foco y bloquea interacción con el fondo.
  */
-export function ClearLogDialog({ engine, onCleared }: ClearLogDialogProps) {
+export function ClearLogDialog({ engine, onCleared, disabled }: ClearLogDialogProps) {
   const { isOpen, open, close, confirm } = useClearLogDialog(engine, onCleared);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
@@ -76,8 +78,13 @@ export function ClearLogDialog({ engine, onCleared }: ClearLogDialogProps) {
       <button
         type="button"
         onClick={open}
-        style={triggerButtonStyle}
-        aria-label="Limpiar registro de ubicaciones"
+        disabled={disabled}
+        style={{
+          ...triggerButtonStyle,
+          opacity: disabled ? 0.6 : 1,
+          cursor: disabled ? 'not-allowed' : 'pointer',
+        }}
+        aria-label="Limpiar todo el registro de ubicaciones"
       >
         Limpiar registro
       </button>

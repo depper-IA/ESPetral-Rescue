@@ -40,3 +40,15 @@ export type {
   KnockDetectorState,
   KnockPatternEvent,
 } from './useKnockDetector';
+
+export { useAudioVisualizer } from './useAudioVisualizer';
+export type { AudioVisualizerRefs } from './useAudioVisualizer';
+
+export { AudioVisualizers } from './AudioVisualizers';
+export type { AudioVisualizersProps } from './AudioVisualizers';
+
+export { AudioDebugPanel } from './AudioDebugPanel';
+export type { AudioDebugPanelProps } from './AudioDebugPanel';
+
+export { KnockStatus } from './KnockStatus';
+export type { KnockStatusProps } from './KnockStatus';

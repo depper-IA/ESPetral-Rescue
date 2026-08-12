@@ -190,11 +190,13 @@ describe('App', () => {
     expect(MockWebSocket.instances.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('debe mostrar mensaje informativo sobre knock detection pendiente', () => {
+  it('debe mostrar el estado del detector de patrones de golpe integrado', () => {
     render(<App />, { wrapper: NoStrictMode });
-    screen.debug();
-    expect(
-      screen.getByText(/Detección de patrones de golpe pendiente/i),
-    ).toBeInTheDocument();
+    // El detector de patrones está ahora integrado; debe verse su estado dentro de
+    // su contenedor .cali-knock-status para no chocar con la meta del audio.
+    const knockStatus = document.querySelector('.cali-knock-status');
+    expect(knockStatus).toBeInTheDocument();
+    expect(knockStatus).toHaveTextContent(/Picos en ventana/i);
+    expect(knockStatus).toHaveTextContent(/Estado: Detenido/i);
   });
 });

@@ -10,8 +10,16 @@ import {
   computeRms,
   INITIAL_NOISE_FLOOR,
   NOISE_FLOOR_ALPHA,
+  PEAK_ABSOLUTE_THRESHOLD,
+  PEAK_NOISE_MULTIPLIER,
   updateNoiseFloor,
 } from './audio-processing';
+import { computeSpectralCentroid } from './knock-detection';
+
+/** Umbral inicial derivado del piso de ruido inicial. */
+function initialThreshold(): number {
+  return Math.max(PEAK_NOISE_MULTIPLIER * INITIAL_NOISE_FLOOR, PEAK_ABSOLUTE_THRESHOLD);
+}
 
 export interface AudioEngineState {
   /** Indica si el motor de audio está activo */
@@ -32,6 +40,12 @@ export interface AudioEngineState {
   analyserNode: AnalyserNode | null;
   /** Tasa de muestreo del AudioContext activo, o null si no está activo */
   sampleRate: number | null;
+  /** Último centroide espectral calculado (Hz), null si aún no se calculó */
+  currentCentroid: number | null;
+  /** Umbral dinámico de pico (= max(PEAK_NOISE_MULTIPLIER * noiseFloor, PEAK_ABSOLUTE_THRESHOLD)) */
+  currentThreshold: number;
+  /** Total de picos detectados desde que se inició la escucha */
+  peaksDetected: number;
 }
 
 export interface AudioEngineControls {
@@ -63,6 +77,9 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
     lastPeakTimestamp: null,
     analyserNode: null,
     sampleRate: null,
+    currentCentroid: null,
+    currentThreshold: initialThreshold(),
+    peaksDetected: 0,
   });
 
   // Referencias internas para el pipeline de audio
@@ -72,6 +89,7 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
   const animFrameRef = useRef<number | null>(null);
   const noiseFloorRef = useRef<number>(INITIAL_NOISE_FLOOR);
   const isListeningRef = useRef<boolean>(false);
+  const peaksDetectedRef = useRef<number>(0);
 
   // Callback de análisis llamado cada frame (≥20 fps con requestAnimationFrame)
   const onPeakCallbackRef = useRef<((timestamp: number) => void) | null>(null);
@@ -97,7 +115,24 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
     // Clasificar si es un pico
     const isPeak = classifyPeak(rms, newNoiseFloor);
 
+    // Calcular centroide espectral y umbral dinámico para el panel de debug
+    const frequencyData = new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(frequencyData);
+    const centroid = computeSpectralCentroid(
+      frequencyData,
+      audioContextRef.current?.sampleRate ?? 44100,
+      analyser.fftSize,
+    );
+    const threshold = Math.max(
+      PEAK_NOISE_MULTIPLIER * newNoiseFloor,
+      PEAK_ABSOLUTE_THRESHOLD,
+    );
+
     const now = Date.now();
+
+    if (isPeak) {
+      peaksDetectedRef.current += 1;
+    }
 
     setState((prev) => ({
       ...prev,
@@ -105,6 +140,9 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
       noiseFloor: newNoiseFloor,
       isPeak,
       lastPeakTimestamp: isPeak ? now : prev.lastPeakTimestamp,
+      currentCentroid: centroid,
+      currentThreshold: threshold,
+      peaksDetected: peaksDetectedRef.current,
     }));
 
     // Notificar picos al callback externo
@@ -156,6 +194,7 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
     analyserRef.current = analyser;
     isListeningRef.current = true;
     noiseFloorRef.current = INITIAL_NOISE_FLOOR;
+    peaksDetectedRef.current = 0;
 
     setState({
       isListening: true,
@@ -165,6 +204,9 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
       lastPeakTimestamp: null,
       analyserNode: analyser,
       sampleRate: audioContext.sampleRate,
+      currentCentroid: null,
+      currentThreshold: initialThreshold(),
+      peaksDetected: 0,
     });
 
     // Iniciar loop de procesamiento
@@ -190,6 +232,7 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
     }
 
     analyserRef.current = null;
+    peaksDetectedRef.current = 0;
 
     setState({
       isListening: false,
@@ -199,6 +242,9 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
       lastPeakTimestamp: null,
       analyserNode: null,
       sampleRate: null,
+      currentCentroid: null,
+      currentThreshold: initialThreshold(),
+      peaksDetected: 0,
     });
   }, []);
 

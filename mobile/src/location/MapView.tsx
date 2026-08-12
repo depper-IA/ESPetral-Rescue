@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import type { LocationEntry } from './location-engine';
 
 /** Máximo de marcadores visibles en el mapa */
@@ -89,6 +90,7 @@ export function MapView({ entries, height = '300px' }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const circlesRef = useRef<Map<string, L.Circle>>(new Map());
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const fallbackLayerRef = useRef<L.Layer | null>(null);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
@@ -116,10 +118,16 @@ export function MapView({ entries, height = '300px' }: MapViewProps) {
 
     mapRef.current = map;
 
+    // Forzar ajuste de dimensiones del contenedor de Leaflet
+    requestAnimationFrame(() => {
+      map.invalidateSize();
+    });
+
     return () => {
       map.remove();
       mapRef.current = null;
       markersRef.current.clear();
+      circlesRef.current.clear();
       tileLayerRef.current = null;
       fallbackLayerRef.current = null;
     };
@@ -172,15 +180,21 @@ export function MapView({ entries, height = '300px' }: MapViewProps) {
     const currentIds = new Set(visibleEntries.map(e => e.id));
     const markerIcon = createMarkerIcon();
 
-    // Remover marcadores que ya no están en las entradas
+    // Remover marcadores y círculos que ya no están en las entradas
     for (const [id, marker] of markersRef.current) {
       if (!currentIds.has(id)) {
         map.removeLayer(marker);
         markersRef.current.delete(id);
       }
     }
+    for (const [id, circle] of circlesRef.current) {
+      if (!currentIds.has(id)) {
+        map.removeLayer(circle);
+        circlesRef.current.delete(id);
+      }
+    }
 
-    // Agregar o actualizar marcadores
+    // Agregar o actualizar marcadores y círculos de precisión
     for (const entry of visibleEntries) {
       if (!markersRef.current.has(entry.id)) {
         const marker = L.marker([entry.lat, entry.lon], {
@@ -193,15 +207,31 @@ export function MapView({ entries, height = '300px' }: MapViewProps) {
         });
         marker.addTo(map);
         markersRef.current.set(entry.id, marker);
+
+        if (entry.accuracy && entry.accuracy > 0) {
+          const circle = L.circle([entry.lat, entry.lon], {
+            radius: entry.accuracy,
+            color: '#dc3545',
+            fillColor: '#dc3545',
+            fillOpacity: 0.15,
+            weight: 1,
+          });
+          circle.addTo(map);
+          circlesRef.current.set(entry.id, circle);
+        }
       }
     }
 
-    // Ajustar viewport para mostrar todos los marcadores
+    // Ajustar viewport para mostrar los puntos a nivel táctico/de edificación (zoom 18-19)
     if (visibleEntries.length > 0) {
-      const bounds = L.latLngBounds(
-        visibleEntries.map(e => [e.lat, e.lon] as [number, number])
-      );
-      map.fitBounds(bounds, { padding: [20, 20], maxZoom: 16 });
+      if (visibleEntries.length === 1) {
+        map.setView([visibleEntries[0].lat, visibleEntries[0].lon], 18);
+      } else {
+        const bounds = L.latLngBounds(
+          visibleEntries.map(e => [e.lat, e.lon] as [number, number])
+        );
+        map.fitBounds(bounds, { padding: [30, 30], maxZoom: 19 });
+      }
     }
   }, [entries]);
 
@@ -212,7 +242,7 @@ export function MapView({ entries, height = '300px' }: MapViewProps) {
   return (
     <div
       className="cali-map-container"
-      style={{ height, width: '100%', position: 'relative' }}
+      style={{ height, width: '100%', position: 'relative', overflow: 'hidden', borderRadius: '8px' }}
     >
       <div
         ref={containerRef}

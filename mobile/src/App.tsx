@@ -3,12 +3,15 @@
  *
  * Integra las 5 áreas funcionales principales:
  * 1. GPS: captura manual vía navigator.geolocation, persistencia encriptada
- * 2. Audio: medidor RMS vía useAudioEngine (knock detection pendiente)
+ * 2. Audio: motor Web Audio (RMS + visualizadores) integrado con detección
+ *    de patrones de golpe (knock patterns) que dispara alertas visuales y de
+ *    vibración.
  * 3. Mapa: visualización de ubicaciones registradas vía MapView (Leaflet)
  * 4. Sync: conexión WebSocket al backend con reintentos y ack
  * 5. Acciones: compartir última ubicación, limpiar registro
  *
  * Requisitos cubiertos en esta versión:
+ * - 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7: detección acústica + knock + alertas
  * - 5.1, 5.2, 5.3, 5.4, 5.5: GPS con persistencia encriptada y clear log
  * - 2.1, 2.2, 2.4: Web Share API con fallback clipboard + confirmación visual
  * - 3.1-3.5: Visualización en mapa (delegado a MapView)
@@ -16,19 +19,22 @@
  * - 13.x: Sync remoto de entradas de ubicación con ack (delegado al sync engine)
  *
  * Pendiente (futuro sprint):
- * - Integración completa audio+knock (gap arquitectural pre-existente:
- *   useAudioEngine no expone analyserNode que useKnockDetector requiere)
- * - Requisito 1.5: alertas visuales/vibración post-knock
  * - Requisito 4.x: PWA + offline shell
  */
 
-import { useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import { LocationEngine, type LocationEntry, type LocationEngineStatus } from './location/location-engine';
 import { shareLocation, showClipboardConfirmation } from './location/share-location';
 import { MapView } from './location/MapView';
-import { ClearLogDialog, useClearLogDialog } from './location/ClearLogDialog';
+import { ClearLogDialog } from './location/ClearLogDialog';
 import { SyncEngine, type ZoneAlert, type ConnectionState } from './sync/sync-engine';
-import { useAudioEngine } from './audio/useAudioEngine';
+import { useAudioEngine, type AudioEngineState } from './audio/useAudioEngine';
+import { useKnockDetector, type KnockDetectorState } from './audio/useKnockDetector';
+import { AudioVisualizers } from './audio/AudioVisualizers';
+import { AudioDebugPanel } from './audio/AudioDebugPanel';
+import { KnockStatus } from './audio/KnockStatus';
+import { useLocationEntrySync } from './sync/useLocationEntrySync';
+import { getOrCreateDeviceToken } from './sync/device-token';
 
 /** URL del backend WebSocket relay. Configurable vía env en build. */
 function resolveBackendWsUrl(): string {
@@ -135,18 +141,33 @@ function GpsSection({
   );
 }
 
-/** Sección de audio con medidor RMS (knock detection pendiente) */
+/** Props de la sección de audio. */
+interface AudioSectionProps {
+  rmsLevel: number;
+  isListening: boolean;
+  onToggle: () => void;
+  startError: string | null;
+  analyserNode: AnalyserNode | null;
+  sampleRate: number | null;
+  knockState: KnockDetectorState;
+  audioState: AudioEngineState;
+  debugMode: boolean;
+  onToggleDebug: () => void;
+}
+
+/** Sección de audio con medidor RMS, visualizadores y detector de golpes */
 function AudioSection({
   rmsLevel,
   isListening,
   onToggle,
   startError,
-}: {
-  rmsLevel: number;
-  isListening: boolean;
-  onToggle: () => void;
-  startError: string | null;
-}): ReactNode {
+  analyserNode,
+  sampleRate,
+  knockState,
+  audioState,
+  debugMode,
+  onToggleDebug,
+}: AudioSectionProps): ReactNode {
   const pct = Math.min(100, Math.max(0, rmsLevel * 100));
   return (
     <section className="cali-section cali-audio-section" aria-labelledby="audio-heading">
@@ -154,12 +175,26 @@ function AudioSection({
       <p className="cali-section-meta">
         Estado: {isListening ? 'Escuchando' : 'Detenido'}
       </p>
+      <AudioVisualizers analyserNode={analyserNode} sampleRate={sampleRate} />
+      {debugMode && (
+        <AudioDebugPanel
+          rmsLevel={audioState.rmsLevel}
+          noiseFloor={audioState.noiseFloor}
+          currentThreshold={audioState.currentThreshold}
+          currentCentroid={audioState.currentCentroid}
+          peaksDetected={audioState.peaksDetected}
+          peaksFilteredByCentroid={knockState.peaksFilteredByCentroid}
+          peaksInWindow={knockState.peaksInWindow}
+          alertActive={knockState.alertActive}
+        />
+      )}
       <div className="cali-rms-meter" aria-hidden="true">
         <div className="cali-rms-bar" style={{ width: `${pct}%` }} />
       </div>
       <p className="cali-rms-readout">
         Nivel RMS: {(rmsLevel * 100).toFixed(0)}%
       </p>
+      <KnockStatus knockState={knockState} />
       <button
         type="button"
         onClick={onToggle}
@@ -167,14 +202,19 @@ function AudioSection({
       >
         {isListening ? 'Detener escucha' : 'Iniciar escucha'}
       </button>
+      <button
+        type="button"
+        onClick={onToggleDebug}
+        className="cali-button cali-debug-toggle"
+        aria-pressed={debugMode}
+      >
+        Debug {debugMode ? 'ON' : 'OFF'}
+      </button>
       {startError && (
         <p role="alert" className="cali-error">
           {startError}
         </p>
       )}
-      <p className="cali-section-footnote">
-        Detección de patrones de golpe pendiente de integración arquitectural.
-      </p>
     </section>
   );
 }
@@ -214,6 +254,12 @@ export function App(): ReactNode {
   }
   const sync = syncRef.current;
 
+  // Token de dispositivo: estable durante toda la sesión (no es auth, solo deduplicación)
+  const deviceToken = useMemo(() => getOrCreateDeviceToken(), []);
+
+  // Hook de sincronización de entradas de ubicación con ack (Req 13.x)
+  const locationSync = useLocationEntrySync(engine, sync, deviceToken);
+
   const [entries, setEntries] = useState<LocationEntry[]>([]);
   const [engineStatus, setEngineStatus] = useState<LocationEngineStatus | null>(null);
   const [note, setNote] = useState('');
@@ -221,13 +267,17 @@ export function App(): ReactNode {
   const [syncState, setSyncState] = useState<ConnectionState>('disconnected');
   const [persistentOffline, setPersistentOffline] = useState(false);
   const [alerts, setAlerts] = useState<readonly ZoneAlert[]>([]);
+  const [debugMode, setDebugMode] = useState(false);
 
   // Audio engine
   const [audioState, audioControls] = useAudioEngine();
   const [audioStartError, setAudioStartError] = useState<string | null>(null);
 
-  // Clear log dialog
-  const clearDialog = useClearLogDialog(engine, () => setEntries([]));
+  // Detector de patrones de golpe (knock patterns) integrado con el motor de audio
+  const [knockState, knockControls] = useKnockDetector({
+    analyserNode: audioState.analyserNode,
+    sampleRate: audioState.sampleRate ?? 44100,
+  });
 
   // Init effects
   useEffect(() => {
@@ -245,9 +295,15 @@ export function App(): ReactNode {
     });
 
     sync.setListener({
-      onConnectionStateChange: (s) => active && setSyncState(s),
+      onConnectionStateChange: (s) => {
+        if (active) {
+          setSyncState(s);
+          locationSync.handleConnectionStateChange(s);
+        }
+      },
       onAlert: (a) => active && setAlerts((prev) => [a, ...prev].slice(0, 50)),
       onPersistentOffline: (off) => active && setPersistentOffline(off),
+      onSyncAck: (ack) => active && locationSync.handleSyncAck(ack),
     });
     sync.connect();
 
@@ -257,6 +313,52 @@ export function App(): ReactNode {
       sync.disconnect();
     };
   }, [engine, sync]);
+
+  // Conecta los picos detectados por el motor de audio al detector de patrones.
+  // Deps: solo las funciones internas estables para evitar re-renders infinitos
+  // (los tuples [state, controls] recrean el objeto control cada render).
+  useEffect(() => {
+    audioControls.onPeak((timestamp: number) => {
+      knockControls.processPeak(timestamp);
+    });
+    return () => {
+      audioControls.onPeak(null);
+    };
+  }, [audioControls.onPeak, knockControls.processPeak]);
+
+  // Sincroniza el ciclo de vida del detector de golpes con el motor de audio.
+  useEffect(() => {
+    if (audioState.isListening) {
+      void knockControls.start();
+    } else {
+      knockControls.stop();
+    }
+  }, [audioState.isListening, knockControls.start, knockControls.stop]);
+
+  // Tarea 7.3: Enviar reporte acústico al backend cuando se detecta un patrón de golpe.
+  // Solo se envía en la transición a true para evitar envíos duplicados.
+  const prevAlertActiveRef = useRef(false);
+  useEffect(() => {
+    const wasActive = prevAlertActiveRef.current;
+    prevAlertActiveRef.current = knockState.alertActive;
+
+    // Disparar solo en la transición false → true
+    if (!knockState.alertActive || wasActive) return;
+
+    // Envío best-effort: si no hay conexión, se omite silenciosamente
+    if (sync.getConnectionState() !== 'connected') return;
+
+    sync.send('cali/acoustic/report', {
+      device_token: deviceToken,
+      // Mejor aproximación de zona: última entrada GPS conocida
+      lat: entries[0]?.lat ?? null,
+      lon: entries[0]?.lon ?? null,
+      peak_count: knockState.lastPattern?.peakCount ?? 3,
+      mean_interval_ms: knockState.lastPattern?.meanInterval ?? 0,
+      confidence: knockState.lastPattern?.confidence ?? 0.5,
+      timestamp: new Date().toISOString(),
+    });
+  }, [knockState.alertActive, knockState.lastPattern, sync, deviceToken, entries]);
 
   // GPS capture
   const handleCapture = useCallback(() => {
@@ -274,6 +376,8 @@ export function App(): ReactNode {
           note.trim(),
         );
         setNote('');
+        // Disparar sync inmediato tras nueva entrada (Req 13.x)
+        locationSync.triggerSync();
       },
       (err) => {
         setCaptureError(`Error GPS: ${err.message}`);
@@ -306,6 +410,11 @@ export function App(): ReactNode {
     }
   }, [audioState.isListening, audioControls]);
 
+  // Toggle del panel de debug acustico
+  const handleToggleDebug = useCallback(() => {
+    setDebugMode((prev) => !prev);
+  }, []);
+
   return (
     <div className="cali-app">
       <header className="cali-header">
@@ -329,6 +438,12 @@ export function App(): ReactNode {
           isListening={audioState.isListening}
           onToggle={handleToggleAudio}
           startError={audioStartError}
+          analyserNode={audioState.analyserNode}
+          sampleRate={audioState.sampleRate}
+          knockState={knockState}
+          audioState={audioState}
+          debugMode={debugMode}
+          onToggleDebug={handleToggleDebug}
         />
 
         <AlertsPanel alerts={alerts} />
@@ -354,18 +469,12 @@ export function App(): ReactNode {
             >
               Compartir última ubicación
             </button>
-            <button
-              type="button"
-              onClick={clearDialog.open}
+            <ClearLogDialog
+              engine={engine}
+              onCleared={() => setEntries([])}
               disabled={entries.length === 0}
-              className="cali-button cali-button-danger"
-              aria-label="Limpiar todo el registro de ubicaciones"
-            >
-              Limpiar registro
-            </button>
+            />
           </div>
-          {/* Modal de confirmación para limpiar */}
-          <ClearLogDialog engine={engine} onCleared={() => setEntries([])} />
         </section>
       </main>
 
@@ -541,6 +650,58 @@ const appStyles = `
     color: #666;
   }
 
+  .cali-visualizers {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 12px 0;
+  }
+  .cali-waveform-canvas,
+  .cali-spectrum-canvas {
+    width: 100%;
+    background: #0a0a0a;
+    border-radius: 4px;
+    display: block;
+  }
+  .cali-waveform-canvas { height: 80px; }
+  .cali-spectrum-canvas { height: 100px; }
+
+  .cali-knock-status {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 4px;
+    background: #f5f5f5;
+    font-size: 14px;
+  }
+  .cali-knock-line {
+    margin: 0 0 4px 0;
+    font-size: 14px;
+  }
+  .cali-knock-last-pattern {
+    margin: 6px 0 0 0;
+    font-size: 13px;
+    color: #444;
+  }
+  .cali-knock-alert {
+    margin-top: 8px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+  }
+  .cali-knock-status[data-active='true'] {
+    background: #d32f2f;
+    color: white;
+    animation: cali-alert-pulse 0.5s ease-in-out infinite alternate;
+  }
+  @keyframes cali-alert-pulse {
+    from { background: #d32f2f; }
+    to { background: #b71c1c; }
+  }
+
   .cali-alerts-list {
     list-style: none;
     margin: 0;
@@ -553,5 +714,37 @@ const appStyles = `
     border-radius: 4px;
     margin-bottom: 6px;
     font-size: 14px;
+  }
+
+  .cali-debug-panel {
+    margin-top: 12px;
+    padding: 12px;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    border-radius: 4px;
+    font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .cali-debug-panel-title {
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: #a0a0ff;
+  }
+  .cali-debug-row {
+    display: flex;
+    justify-content: space-between;
+  }
+  .cali-debug-divider {
+    border-top: 1px solid #444;
+    margin: 8px 0;
+  }
+  .cali-debug-panel[data-active='true'] {
+    border: 2px solid #ff5252;
+  }
+  .cali-debug-toggle {
+    font-size: 12px;
+    padding: 4px 8px;
+    margin-left: 8px;
   }
 `;
