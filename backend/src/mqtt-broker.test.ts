@@ -11,6 +11,7 @@ import { initializeDatabase, stopPurgeDaemon } from './database.js';
 import {
   createMqttBroker,
   validateCsiPayload,
+  validateCsiRawFrame,
   buildLastWillPayload,
   buildLastWillTopic,
   KEEP_ALIVE_LIMIT,
@@ -182,6 +183,210 @@ describe('validateCsiPayload', () => {
       node_id: 'node-01',
     }));
     expect(validateCsiPayload(payload)).not.toBeNull();
+  });
+});
+
+// --- Tests de validación de payload CSI raw (64 amplitudes de subportadora) ---
+
+describe('validateCsiRawFrame', () => {
+  // Helper: genera un array de 64 floats de prueba
+  const makeAmplitudes = (count: number = 64): number[] =>
+    Array.from({ length: count }, (_, i) => i + 0.5);
+
+  it('acepta un mensaje CSI raw válido con 64 amplitudes', () => {
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00Z',
+      subcarrier_amplitudes: makeAmplitudes(),
+    });
+    const result = validateCsiRawFrame(payload);
+    expect(result).not.toBeNull();
+    expect(result!.zone_id).toBe('zone-a');
+    expect(result!.node_id).toBe('node-01');
+    expect(result!.subcarrier_amplitudes).toHaveLength(64);
+  });
+
+  it('rechaza JSON no válido', () => {
+    expect(validateCsiRawFrame('not json')).toBeNull();
+  });
+
+  it('rechaza payload sin zone_id', () => {
+    const payload = JSON.stringify({
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00Z',
+      subcarrier_amplitudes: makeAmplitudes(),
+    });
+    expect(validateCsiRawFrame(payload)).toBeNull();
+  });
+
+  it('rechaza payload sin node_id', () => {
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      timestamp: '2024-01-15T10:30:00Z',
+      subcarrier_amplitudes: makeAmplitudes(),
+    });
+    expect(validateCsiRawFrame(payload)).toBeNull();
+  });
+
+  it('rechaza payload sin timestamp', () => {
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      node_id: 'node-01',
+      subcarrier_amplitudes: makeAmplitudes(),
+    });
+    expect(validateCsiRawFrame(payload)).toBeNull();
+  });
+
+  it('rechaza payload sin subcarrier_amplitudes', () => {
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00Z',
+    });
+    expect(validateCsiRawFrame(payload)).toBeNull();
+  });
+
+  it('rechaza subcarrier_amplitudes con longitud distinta a 64 (63)', () => {
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00Z',
+      subcarrier_amplitudes: makeAmplitudes(63),
+    });
+    expect(validateCsiRawFrame(payload)).toBeNull();
+  });
+
+  it('rechaza subcarrier_amplitudes con longitud distinta a 64 (65)', () => {
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00Z',
+      subcarrier_amplitudes: makeAmplitudes(65),
+    });
+    expect(validateCsiRawFrame(payload)).toBeNull();
+  });
+
+  it('rechaza subcarrier_amplitudes vacío (length 0)', () => {
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00Z',
+      subcarrier_amplitudes: [],
+    });
+    expect(validateCsiRawFrame(payload)).toBeNull();
+  });
+
+  it('rechaza subcarrier_amplitudes que no es array (string)', () => {
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00Z',
+      subcarrier_amplitudes: 'not-an-array',
+    });
+    expect(validateCsiRawFrame(payload)).toBeNull();
+  });
+
+  it('rechaza amplitud NaN en el array', () => {
+    const amplitudes = makeAmplitudes();
+    amplitudes[10] = NaN;
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00Z',
+      subcarrier_amplitudes: amplitudes,
+    });
+    // JSON.stringify(NaN) produce null, lo que reduce el array length efectivo.
+    expect(validateCsiRawFrame(payload)).toBeNull();
+  });
+
+  it('rechaza amplitud Infinity en el array', () => {
+    const amplitudes = makeAmplitudes();
+    amplitudes[5] = Infinity;
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00Z',
+      subcarrier_amplitudes: amplitudes,
+    });
+    // JSON.stringify(Infinity) produce null, reduce length efectivo.
+    expect(validateCsiRawFrame(payload)).toBeNull();
+  });
+
+  it('rechaza amplitud que no es número (string)', () => {
+    const amplitudes = makeAmplitudes();
+    amplitudes[20] = 'oops' as unknown as number;
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00Z',
+      subcarrier_amplitudes: amplitudes,
+    });
+    expect(validateCsiRawFrame(payload)).toBeNull();
+  });
+
+  it('rechaza timestamp no ISO 8601', () => {
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      node_id: 'node-01',
+      timestamp: '15/01/2024 10:30',
+      subcarrier_amplitudes: makeAmplitudes(),
+    });
+    expect(validateCsiRawFrame(payload)).toBeNull();
+  });
+
+  it('acepta timestamp con offset de zona horaria', () => {
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00-05:00',
+      subcarrier_amplitudes: makeAmplitudes(),
+    });
+    expect(validateCsiRawFrame(payload)).not.toBeNull();
+  });
+
+  it('rechaza zone_id vacío', () => {
+    const payload = JSON.stringify({
+      zone_id: '',
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00Z',
+      subcarrier_amplitudes: makeAmplitudes(),
+    });
+    expect(validateCsiRawFrame(payload)).toBeNull();
+  });
+
+  it('rechaza zone_id mayor a 64 caracteres', () => {
+    const payload = JSON.stringify({
+      zone_id: 'a'.repeat(65),
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00Z',
+      subcarrier_amplitudes: makeAmplitudes(),
+    });
+    expect(validateCsiRawFrame(payload)).toBeNull();
+  });
+
+  it('acepta Buffer como input', () => {
+    const payload = Buffer.from(JSON.stringify({
+      zone_id: 'zone-a',
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00Z',
+      subcarrier_amplitudes: makeAmplitudes(),
+    }));
+    expect(validateCsiRawFrame(payload)).not.toBeNull();
+  });
+
+  it('preserva los valores de amplitudes en el resultado validado', () => {
+    const amplitudes = makeAmplitudes();
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      node_id: 'node-01',
+      timestamp: '2024-01-15T10:30:00Z',
+      subcarrier_amplitudes: amplitudes,
+    });
+    const result = validateCsiRawFrame(payload);
+    expect(result).not.toBeNull();
+    expect(result!.subcarrier_amplitudes[0]).toBe(0.5);
+    expect(result!.subcarrier_amplitudes[63]).toBe(63.5);
   });
 });
 
@@ -476,6 +681,189 @@ describe('createMqttBroker - integración', () => {
     // Verificar latencia < 200ms (Req 6.2)
     const latency = receiveTime - publishTime;
     expect(latency).toBeLessThan(200);
+  });
+
+  it('permite publicar un mensaje CSI raw válido (64 amplitudes)', async () => {
+    const tokens = new Set(['raw-token']);
+    brokerInstance = createMqttBroker({ mqttPort: 18842, wsPort: 19012, tokens });
+
+    await brokerInstance.ready;
+
+    // Suscriptor
+    const subscriber = mqtt.connect('mqtt://localhost:18842', {
+      ...MQTT_OPTIONS,
+      username: 'sub',
+      password: 'raw-token',
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      subscriber.on('connect', () => resolve());
+      subscriber.on('error', reject);
+      setTimeout(() => reject(new Error('Sub timeout')), 5000);
+    });
+
+    subscriber.subscribe('cali/zone/zone-raw/csi_raw');
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Publicador
+    const publisher = mqtt.connect('mqtt://localhost:18842', {
+      ...MQTT_OPTIONS,
+      username: 'pub',
+      password: 'raw-token',
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      publisher.on('connect', () => resolve());
+      publisher.on('error', reject);
+      setTimeout(() => reject(new Error('Pub timeout')), 5000);
+    });
+
+    const amplitudes = Array.from({ length: 64 }, (_, i) => i * 0.1);
+
+    await new Promise<void>((resolve, reject) => {
+      subscriber.on('message', (_topic, payload) => {
+        const msg = JSON.parse(payload.toString());
+        expect(msg.zone_id).toBe('zone-raw');
+        expect(msg.node_id).toBe('node-raw');
+        expect(Array.isArray(msg.subcarrier_amplitudes)).toBe(true);
+        expect(msg.subcarrier_amplitudes).toHaveLength(64);
+        expect(msg.subcarrier_amplitudes[0]).toBeCloseTo(0);
+        publisher.end();
+        subscriber.end();
+        resolve();
+      });
+
+      const validRaw = JSON.stringify({
+        zone_id: 'zone-raw',
+        node_id: 'node-raw',
+        timestamp: '2024-01-15T10:30:00Z',
+        subcarrier_amplitudes: amplitudes,
+      });
+
+      publisher.publish('cali/zone/zone-raw/csi_raw', validRaw, (err) => {
+        if (err) {
+          publisher.end();
+          subscriber.end();
+          reject(err);
+        }
+      });
+
+      setTimeout(() => { publisher.end(); subscriber.end(); reject(new Error('Mensaje csi_raw no relay-eado')); }, 5000);
+    });
+  });
+
+  it('rechaza mensaje CSI raw con subcarrier_amplitudes de longitud incorrecta', async () => {
+    const tokens = new Set(['raw-token']);
+    brokerInstance = createMqttBroker({ mqttPort: 18843, wsPort: 19013, tokens });
+
+    await brokerInstance.ready;
+
+    const subscriber = mqtt.connect('mqtt://localhost:18843', {
+      ...MQTT_OPTIONS,
+      username: 'sub',
+      password: 'raw-token',
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      subscriber.on('connect', () => resolve());
+      subscriber.on('error', reject);
+      setTimeout(() => reject(new Error('Sub timeout')), 5000);
+    });
+
+    subscriber.subscribe('cali/zone/zone-x/csi_raw');
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    const publisher = mqtt.connect('mqtt://localhost:18843', {
+      ...MQTT_OPTIONS,
+      username: 'pub',
+      password: 'raw-token',
+    });
+
+    let messageReceived = false;
+    subscriber.on('message', () => { messageReceived = true; });
+
+    await new Promise<void>((resolve, reject) => {
+      publisher.on('connect', () => {
+        // 32 amplitudes en vez de 64 — debe ser rechazado por authorizePublish
+        const invalidRaw = JSON.stringify({
+          zone_id: 'zone-x',
+          node_id: 'node-x',
+          timestamp: '2024-01-15T10:30:00Z',
+          subcarrier_amplitudes: Array.from({ length: 32 }, (_, i) => i),
+        });
+
+        publisher.publish('cali/zone/zone-x/csi_raw', invalidRaw, () => {
+          setTimeout(() => {
+            publisher.end();
+            subscriber.end();
+            if (messageReceived) {
+              reject(new Error('El mensaje csi_raw inválido fue relay-eado'));
+            } else {
+              resolve();
+            }
+          }, 500);
+        });
+      });
+      publisher.on('error', (err) => { publisher.end(); subscriber.end(); reject(err); });
+      setTimeout(() => { publisher.end(); subscriber.end(); reject(new Error('Timeout')); }, 5000);
+    });
+  });
+
+  it('rechaza mensaje CSI raw con zone_id distinto al del topic', async () => {
+    const tokens = new Set(['raw-token']);
+    brokerInstance = createMqttBroker({ mqttPort: 18844, wsPort: 19014, tokens });
+
+    await brokerInstance.ready;
+
+    const subscriber = mqtt.connect('mqtt://localhost:18844', {
+      ...MQTT_OPTIONS,
+      username: 'sub',
+      password: 'raw-token',
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      subscriber.on('connect', () => resolve());
+      subscriber.on('error', reject);
+      setTimeout(() => reject(new Error('Sub timeout')), 5000);
+    });
+
+    subscriber.subscribe('cali/zone/zone-y/csi_raw');
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    const publisher = mqtt.connect('mqtt://localhost:18844', {
+      ...MQTT_OPTIONS,
+      username: 'pub',
+      password: 'raw-token',
+    });
+
+    let messageReceived = false;
+    subscriber.on('message', () => { messageReceived = true; });
+
+    await new Promise<void>((resolve, reject) => {
+      publisher.on('connect', () => {
+        // zone_id del payload "zone-z" no coincide con zone-y del topic
+        const mismatchRaw = JSON.stringify({
+          zone_id: 'zone-z',
+          node_id: 'node-y',
+          timestamp: '2024-01-15T10:30:00Z',
+          subcarrier_amplitudes: Array.from({ length: 64 }, () => 0),
+        });
+
+        publisher.publish('cali/zone/zone-y/csi_raw', mismatchRaw, () => {
+          setTimeout(() => {
+            publisher.end();
+            subscriber.end();
+            if (messageReceived) {
+              reject(new Error('zone_id distinto al topic fue relay-eado'));
+            } else {
+              resolve();
+            }
+          }, 500);
+        });
+      });
+      publisher.on('error', (err) => { publisher.end(); subscriber.end(); reject(err); });
+      setTimeout(() => { publisher.end(); subscriber.end(); reject(new Error('Timeout')); }, 5000);
+    });
   });
 
   it('Last Will se publica al desconectar cliente inesperadamente', async () => {

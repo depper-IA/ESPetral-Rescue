@@ -18,7 +18,7 @@ import { createServer, type Server as NetServer } from 'net';
 import { createServer as createHttpServer, type Server as HttpServer } from 'http';
 import { WebSocketServer, createWebSocketStream } from 'ws';
 import type Database from 'better-sqlite3';
-import type { CsiTelemetryMessage } from './types.js';
+import type { CsiTelemetryMessage, CsiRawFrameMessage } from './types.js';
 
 // --- Constantes de configuración por defecto ---
 
@@ -50,6 +50,9 @@ export const MAX_CONNECTIONS = 20;
 
 /** Patrón de topic para telemetría CSI */
 const CSI_TOPIC_PATTERN = /^cali\/zone\/([a-zA-Z0-9_-]{1,64})\/csi$/;
+
+/** Patrón de topic para telemetría CSI cruda (64 amplitudes por trama) */
+const CSI_RAW_TOPIC_PATTERN = /^cali\/zone\/([a-zA-Z0-9_-]{1,64})\/csi_raw$/;
 
 /** Patrón de topic para estado de nodos */
 const STATUS_TOPIC_PATTERN = /^cali\/zone\/([a-zA-Z0-9_-]{1,64})\/status$/;
@@ -107,6 +110,70 @@ export function validateCsiPayload(payload: string | Buffer): CsiTelemetryMessag
     node_id: msg.node_id,
     timestamp: msg.timestamp,
     motion_probability: msg.motion_probability,
+  };
+}
+
+/**
+ * Valida que un payload JSON cumple con el esquema CsiRawFrameMessage.
+ * Esquema: { zone_id, node_id, timestamp, subcarrier_amplitudes: number[64] }.
+ *
+ * Cada elemento del array debe ser un número finito (no NaN, no Infinity):
+ * `sqrtf(i² + q²)` en el firmware siempre produce valores reales, pero
+ * defendemos contra payloads corruptos antes de reenviar al dashboard.
+ *
+ * Acepta tanto string como Buffer. Retorna el mensaje parseado si es válido,
+ * o null si no.
+ */
+export function validateCsiRawFrame(payload: string | Buffer): CsiRawFrameMessage | null {
+  const raw = typeof payload === 'string' ? payload : payload.toString('utf-8');
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  if (typeof parsed !== 'object' || parsed === null) {
+    return null;
+  }
+
+  const msg = parsed as Record<string, unknown>;
+
+  // Validar campo zone_id: string, 1-64 caracteres
+  if (typeof msg.zone_id !== 'string' || msg.zone_id.length < 1 || msg.zone_id.length > 64) {
+    return null;
+  }
+
+  // Validar campo node_id: string, 1-64 caracteres
+  if (typeof msg.node_id !== 'string' || msg.node_id.length < 1 || msg.node_id.length > 64) {
+    return null;
+  }
+
+  // Validar campo timestamp: string en formato ISO 8601
+  if (typeof msg.timestamp !== 'string' || !isValidIso8601(msg.timestamp)) {
+    return null;
+  }
+
+  // Validar campo subcarrier_amplitudes: array de exactamente 64 números finitos.
+  // El firmware publica siempre 64 amplitudes (constante CSI_NUM_SUBCARRIERS=64
+  // en firmware/main/csi_engine.h). Rechazar longitudes distintas evita que el
+  // dashboard asuma shape incorrecto al renderizar.
+  if (!Array.isArray(msg.subcarrier_amplitudes) || msg.subcarrier_amplitudes.length !== 64) {
+    return null;
+  }
+
+  for (const amp of msg.subcarrier_amplitudes) {
+    if (typeof amp !== 'number' || !Number.isFinite(amp)) {
+      return null;
+    }
+  }
+
+  return {
+    zone_id: msg.zone_id,
+    node_id: msg.node_id,
+    timestamp: msg.timestamp,
+    subcarrier_amplitudes: msg.subcarrier_amplitudes,
   };
 }
 
@@ -298,6 +365,29 @@ export function createMqttBroker(options: MqttBrokerOptions = {}): MqttBrokerIns
       const topicZoneId = csiMatch[1];
       if (validatedMsg.zone_id !== topicZoneId) {
         const error = new Error('zone_id del payload no coincide con el topic');
+        callback(error);
+        return;
+      }
+    }
+
+    // Validar esquema JSON en topics CSI raw (64 amplitudes de subportadora)
+    const csiRawMatch = CSI_RAW_TOPIC_PATTERN.exec(packet.topic);
+    if (csiRawMatch) {
+      const payloadStr = Buffer.isBuffer(packet.payload)
+        ? packet.payload.toString('utf-8')
+        : packet.payload.toString();
+
+      const validatedRaw = validateCsiRawFrame(payloadStr);
+      if (!validatedRaw) {
+        const error = new Error('Mensaje CSI raw inválido: esquema JSON no cumple con los requisitos');
+        callback(error);
+        return;
+      }
+
+      // Verificar que el zone_id del topic coincide con el del payload
+      const topicZoneId = csiRawMatch[1];
+      if (validatedRaw.zone_id !== topicZoneId) {
+        const error = new Error('zone_id del payload csi_raw no coincide con el topic');
         callback(error);
         return;
       }

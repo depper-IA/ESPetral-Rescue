@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { WebSocket } from 'ws';
 import { createDashboardServer, type ServerInstance } from './server.js';
 import { initializeDatabase } from './database.js';
 import type Database from 'better-sqlite3';
@@ -141,6 +142,49 @@ describe('Dashboard Server', () => {
       expect(() => {
         server.broadcastProbabilityUpdate('zone-1', 30);
       }).not.toThrow();
+    });
+
+    it('broadcastCsiRawUpdate no lanza error sin clientes conectados', () => {
+      const amplitudes = Array.from({ length: 64 }, (_, i) => i * 0.1);
+      expect(() => {
+        server.broadcastCsiRawUpdate('zone-1', 'node-1', amplitudes, '2024-01-15T10:30:00Z');
+      }).not.toThrow();
+    });
+
+    it('broadcastCsiRawUpdate envía mensaje csi_raw_update al cliente conectado', async () => {
+      // Conectar un cliente WS y validar el shape del mensaje recibido.
+      const ws = new WebSocket(`ws://localhost:${TEST_PORT}/ws/dashboard`);
+      const received: unknown[] = [];
+      const done = new Promise<void>((resolve, reject) => {
+        ws.on('message', (data) => {
+          const msg = JSON.parse(data.toString());
+          received.push(msg);
+          if (msg.type === 'zones_sync') {
+            // Ignorar el sync inicial; emitir el raw y verificar luego
+            setTimeout(() => {
+              const amplitudes = Array.from({ length: 64 }, (_, i) => i * 0.5);
+              server.broadcastCsiRawUpdate('zone-test', 'node-test', amplitudes, '2024-01-15T11:00:00Z');
+            }, 50);
+          } else if (msg.type === 'csi_raw_update') {
+            try {
+              expect(msg.zone_id).toBe('zone-test');
+              expect(msg.node_id).toBe('node-test');
+              expect(msg.timestamp).toBe('2024-01-15T11:00:00Z');
+              expect(msg.subcarrier_amplitudes).toHaveLength(64);
+              expect(msg.subcarrier_amplitudes[0]).toBe(0);
+              expect(msg.subcarrier_amplitudes[63]).toBeCloseTo(31.5);
+              ws.close();
+              resolve();
+            } catch (err) {
+              ws.close();
+              reject(err);
+            }
+          }
+        });
+        ws.on('error', (err) => { ws.close(); reject(err); });
+        setTimeout(() => { ws.close(); reject(new Error('Timeout esperando csi_raw_update')); }, 3000);
+      });
+      await done;
     });
   });
 });

@@ -21,7 +21,7 @@ import { createMqttBroker, DEFAULT_MQTT_PORT } from './mqtt-broker.js';
 import { createDashboardServer } from './server.js';
 import { createWsRelay } from './ws-relay.js';
 import { ScoringEngine } from './scoring-engine.js';
-import { validateCsiPayload } from './mqtt-broker.js';
+import { validateCsiPayload, validateCsiRawFrame } from './mqtt-broker.js';
 import { startMdnsAnnouncer } from './mdns-announcer.js';
 
 const HTTP_PORT = parseInt(process.env.CALI_HTTP_PORT || '3000', 10);
@@ -80,6 +80,25 @@ async function main() {
         } catch (err) {
           console.error('[cali] Error al persistir lectura CSI:', err);
         }
+      }
+    }
+
+    // Filtrar mensajes CSI raw: cali/zone/{zone_id}/csi_raw
+    // El firmware publica las 64 amplitudes de subportadora a ~1 Hz para que
+    // pipelines RuView (bandpass breathing/HR, ML presence/pose) operen sobre
+    // datos crudos, no solo sobre motion_probability agregada.
+    // No persistimos en SQLite: 64 floats × 1 Hz × N nodos = mucho volumen.
+    // La función del backend es solo retransmitir al dashboard vía WS.
+    const rawMatch = /^cali\/zone\/([a-zA-Z0-9_-]{1,64})\/csi_raw$/.exec(packet.topic);
+    if (rawMatch) {
+      const rawPayload = validateCsiRawFrame(packet.payload);
+      if (rawPayload) {
+        server.broadcastCsiRawUpdate(
+          rawPayload.zone_id,
+          rawPayload.node_id,
+          rawPayload.subcarrier_amplitudes,
+          rawPayload.timestamp,
+        );
       }
     }
 

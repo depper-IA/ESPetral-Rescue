@@ -56,6 +56,8 @@ export interface ServerInstance {
   stop(): Promise<void>;
   /** Envía una actualización de telemetría CSI a todos los clientes del dashboard */
   broadcastCsiUpdate(zoneId: string, motionProbability: number, nodeId?: string): void;
+  /** Envía una trama CSI cruda (64 amplitudes de subportadora) al dashboard para visualización */
+  broadcastCsiRawUpdate(zoneId: string, nodeId: string, amplitudes: number[], timestamp: string): void;
   /** Envía una nueva zona a todos los clientes del dashboard */
   broadcastZoneAdded(zone: ZoneRow): void;
   /** Envía una entrada de ubicación sincronizada como reporte de campo al dashboard */
@@ -169,6 +171,22 @@ export function createDashboardServer(options: ServerOptions): ServerInstance {
     }
   }
 
+  function broadcastCsiRawUpdate(zoneId: string, nodeId: string, amplitudes: number[], timestamp: string): void {
+    const message = JSON.stringify({
+      type: 'csi_raw_update',
+      zone_id: zoneId,
+      node_id: nodeId,
+      subcarrier_amplitudes: amplitudes,
+      timestamp,
+    });
+
+    for (const client of wss.clients) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    }
+  }
+
   function broadcastZoneAdded(zone: ZoneRow): void {
     const message = JSON.stringify({
       type: 'zone_added',
@@ -261,6 +279,7 @@ export function createDashboardServer(options: ServerOptions): ServerInstance {
     start,
     stop,
     broadcastCsiUpdate,
+    broadcastCsiRawUpdate,
     broadcastZoneAdded,
     broadcastFieldReport,
     broadcastNodeStatus,

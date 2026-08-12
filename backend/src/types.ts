@@ -19,6 +19,23 @@ export interface CsiTelemetryMessage {
   node_id: string;
 }
 
+/**
+ * Mensaje de telemetría CSI cruda: 64 amplitudes de subportadora por trama.
+ *
+ * Publicado por el firmware ESP32 en el topic `cali/zone/{zone_id}/csi_raw`
+ * a ~1 Hz para alimentar pipelines de RuView (bandpass filters para
+ * breathing/heart rate, inferencia ML para presence detection / pose).
+ *
+ * El firmware garantiza zone_id == topic's zone_id, validador igual a
+ * CsiTelemetryMessage.
+ */
+export interface CsiRawFrameMessage {
+  zone_id: string;
+  node_id: string;
+  timestamp: string; // ISO 8601
+  subcarrier_amplitudes: number[]; // length === 64
+}
+
 /** Probability update published on `cali/zone/{zone_id}/probability` */
 export interface ProbabilityUpdate {
   /** Zone identifier */

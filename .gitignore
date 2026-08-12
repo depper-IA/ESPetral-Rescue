@@ -25,6 +25,7 @@ cloud/node_modules/
 backend/dist/
 mobile/dist/
 cloud/.aws-sam/
+mobile/tsconfig.tsbuildinfo
 
 # Database files
 backend/data/
