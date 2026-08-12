@@ -36,6 +36,8 @@ import { KnockStatus, KnockAlertBanner } from './audio/KnockStatus';
 import { useLocationEntrySync } from './sync/useLocationEntrySync';
 import { getOrCreateDeviceToken } from './sync/device-token';
 import { appStyles } from './App.styles';
+import { RadarSeeker } from './radar/RadarSeeker';
+import type { RawCsiFrame } from './sync/sync-engine';
 
 /**
  * Alto reservado (px) para el contenido cuando la barra de sync fija está
@@ -298,6 +300,8 @@ export function App(): ReactNode {
   const [syncState, setSyncState] = useState<ConnectionState>('disconnected');
   const [persistentOffline, setPersistentOffline] = useState(false);
   const [alerts, setAlerts] = useState<readonly ZoneAlert[]>([]);
+  const [rawCsiFrame, setRawCsiFrame] = useState<RawCsiFrame | null>(null);
+  const [activeTab, setActiveTab] = useState<'radar' | 'audio' | 'map' | 'gps'>('radar');
   const [debugMode, setDebugMode] = useState(false);
 
   // Audio engine
@@ -333,6 +337,7 @@ export function App(): ReactNode {
         }
       },
       onAlert: (a) => active && setAlerts((prev) => [a, ...prev].slice(0, 50)),
+      onRawCsi: (frame) => active && setRawCsiFrame(frame),
       onPersistentOffline: (off) => active && setPersistentOffline(off),
       onSyncAck: (ack) => active && locationSync.handleSyncAck(ack),
     });
@@ -463,62 +468,187 @@ export function App(): ReactNode {
 
       <header className="cali-header">
         <h1>ESPetral Rescue</h1>
-        <p className="cali-tagline">Herramienta de campo para búsqueda y rescate</p>
+        <p className="cali-tagline">Buscador táctico de presencia humana y rescate</p>
       </header>
 
-      <main>
-        <GpsSection
-          engine={engine}
-          engineStatus={engineStatus}
-          note={note}
-          onNoteChange={setNote}
-          onCapture={handleCapture}
-          captureError={captureError}
-        />
+      {/* Navegación Táctica Unificada (48px touch targets) */}
+      <nav
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: '4px',
+          padding: '6px 12px',
+          background: '#161b22',
+          borderBottom: '1px solid #30363d',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setActiveTab('radar')}
+          style={{
+            minHeight: '48px',
+            padding: '8px 4px',
+            background: activeTab === 'radar' ? '#238636' : '#21262d',
+            color: activeTab === 'radar' ? '#fff' : '#8b949e',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '2px',
+          }}
+        >
+          <span>🎯 RADAR</span>
+        </button>
 
-        <AudioSection
-          rmsLevel={audioState.rmsLevel}
-          isListening={audioState.isListening}
-          onToggle={handleToggleAudio}
-          startError={audioStartError}
-          analyserNode={audioState.analyserNode}
-          sampleRate={audioState.sampleRate}
-          knockState={knockState}
-          audioState={audioState}
-          debugMode={debugMode}
-          onToggleDebug={handleToggleDebug}
-        />
+        <button
+          type="button"
+          onClick={() => setActiveTab('audio')}
+          style={{
+            minHeight: '48px',
+            padding: '8px 4px',
+            background: activeTab === 'audio' ? '#238636' : '#21262d',
+            color: activeTab === 'audio' ? '#fff' : '#8b949e',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '2px',
+          }}
+        >
+          <span>🎤 GOLPES</span>
+        </button>
 
-        <AlertsPanel alerts={alerts} />
+        <button
+          type="button"
+          onClick={() => setActiveTab('map')}
+          style={{
+            minHeight: '48px',
+            padding: '8px 4px',
+            background: activeTab === 'map' ? '#238636' : '#21262d',
+            color: activeTab === 'map' ? '#fff' : '#8b949e',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '2px',
+          }}
+        >
+          <span>🗺️ MAPA</span>
+        </button>
 
-        <section className="cali-section cali-map-section" aria-labelledby="map-heading">
-          <h2 id="map-heading">Mapa de ubicaciones</h2>
-          {entries.length === 0 ? (
-            <p className="cali-section-meta">Sin ubicaciones registradas aún.</p>
-          ) : (
-            <MapView entries={entries} height="320px" />
-          )}
-        </section>
+        <button
+          type="button"
+          onClick={() => setActiveTab('gps')}
+          style={{
+            minHeight: '48px',
+            padding: '8px 4px',
+            background: activeTab === 'gps' ? '#238636' : '#21262d',
+            color: activeTab === 'gps' ? '#fff' : '#8b949e',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '2px',
+          }}
+        >
+          <span>📍 GPS</span>
+        </button>
+      </nav>
 
-        <section className="cali-section cali-actions-section" aria-labelledby="actions-heading">
-          <h2 id="actions-heading">Acciones</h2>
-          <div className="cali-actions-buttons">
-            <button
-              type="button"
-              onClick={handleShare}
-              disabled={entries.length === 0}
-              className="cali-button"
-              aria-label="Compartir la última ubicación registrada"
-            >
-              Compartir última ubicación
-            </button>
-            <ClearLogDialog
+      <main style={{ padding: '12px' }}>
+        {/* Pestaña Principal: RADAR Seeker Táctico + Waterfall CSI */}
+        {activeTab === 'radar' && (
+          <RadarSeeker
+            alerts={alerts}
+            rawCsiFrame={rawCsiFrame}
+            knockState={knockState}
+            isConnected={syncState === 'connected'}
+          />
+        )}
+
+        {/* Pestaña: Detector de Golpes Acústico */}
+        {activeTab === 'audio' && (
+          <AudioSection
+            rmsLevel={audioState.rmsLevel}
+            isListening={audioState.isListening}
+            onToggle={handleToggleAudio}
+            startError={audioStartError}
+            analyserNode={audioState.analyserNode}
+            sampleRate={audioState.sampleRate}
+            knockState={knockState}
+            audioState={audioState}
+            debugMode={debugMode}
+            onToggleDebug={handleToggleDebug}
+          />
+        )}
+
+        {/* Pestaña Secundaria: Mapa de Zonas y Ubicaciones */}
+        {activeTab === 'map' && (
+          <>
+            <AlertsPanel alerts={alerts} />
+            <section className="cali-section cali-map-section" aria-labelledby="map-heading">
+              <h2 id="map-heading">Mapa de ubicaciones</h2>
+              {entries.length === 0 ? (
+                <p className="cali-section-meta">Sin ubicaciones registradas aún.</p>
+              ) : (
+                <MapView entries={entries} height="360px" />
+              )}
+            </section>
+          </>
+        )}
+
+        {/* Pestaña Secundaria: Registro GPS y Acciones */}
+        {activeTab === 'gps' && (
+          <>
+            <GpsSection
               engine={engine}
-              onCleared={() => setEntries([])}
-              disabled={entries.length === 0}
+              engineStatus={engineStatus}
+              note={note}
+              onNoteChange={setNote}
+              onCapture={handleCapture}
+              captureError={captureError}
             />
-          </div>
-        </section>
+            <section className="cali-section cali-actions-section" aria-labelledby="actions-heading">
+              <h2 id="actions-heading">Acciones</h2>
+              <div className="cali-actions-buttons">
+                <button
+                  type="button"
+                  onClick={handleShare}
+                  disabled={entries.length === 0}
+                  className="cali-button"
+                  aria-label="Compartir la última ubicación registrada"
+                >
+                  Compartir última ubicación
+                </button>
+                <ClearLogDialog
+                  engine={engine}
+                  onCleared={() => setEntries([])}
+                  disabled={entries.length === 0}
+                />
+              </div>
+            </section>
+          </>
+        )}
       </main>
 
       {/* Estilos inline para no requerir CSS modules en este commit.

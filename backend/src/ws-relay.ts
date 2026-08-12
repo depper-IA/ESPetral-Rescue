@@ -502,7 +502,7 @@ export function createWsRelay(options: WsRelayOptions): WsRelayInstance {
 
     mqttClient.on('connect', () => {
       console.log('[ws-relay] Conectado al broker MQTT para retransmisión CSI');
-      mqttClient!.subscribe('cali/zone/+/csi', (err) => {
+      mqttClient!.subscribe(['cali/zone/+/csi', 'cali/zone/+/csi_raw'], (err) => {
         if (err) {
           console.error('[ws-relay] Error al suscribirse a tópicos CSI:', err.message);
         }
@@ -510,8 +510,8 @@ export function createWsRelay(options: WsRelayOptions): WsRelayInstance {
     });
 
     mqttClient.on('message', (topic: string, payload: Buffer) => {
-      // Retransmitir mensajes CSI a todos los clientes móviles conectados
-      if (topic.startsWith(CSI_TOPIC_PREFIX) && topic.endsWith(CSI_TOPIC_SUFFIX)) {
+      // Retransmitir mensajes CSI y CSI raw a todos los clientes móviles conectados
+      if (topic.startsWith(CSI_TOPIC_PREFIX)) {
         relayCsiToClients(topic, payload, clients);
       }
     });

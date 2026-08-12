@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { App } from './App';
 
@@ -148,7 +148,7 @@ describe('App', () => {
   it('debe renderizar el título y el subtítulo del header', () => {
     render(<App />, { wrapper: NoStrictMode });
     expect(screen.getByRole('heading', { name: /ESPetral Rescue/i, level: 1 })).toBeInTheDocument();
-    expect(screen.getByText(/Herramienta de campo para búsqueda y rescate/i)).toBeInTheDocument();
+    expect(screen.getByText(/Buscador táctico de presencia humana y rescate/i)).toBeInTheDocument();
   });
 
   it('debe renderizar el indicador de estado de sync', () => {
@@ -157,21 +157,24 @@ describe('App', () => {
     expect(screen.getByRole('status')).toBeInTheDocument();
   });
 
-  it('debe renderizar las 5 secciones principales', () => {
+  it('debe renderizar la navegación táctica unificada y el buscador RADAR', () => {
     render(<App />, { wrapper: NoStrictMode });
-    expect(screen.getByRole('heading', { name: /Ubicación GPS/i, level: 2 })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Detección acústica/i, level: 2 })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Mapa de ubicaciones/i, level: 2 })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Acciones/i, level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /BUSCADOR TÁCTICO RADAR/i, level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /RADAR/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /GOLPES/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /MAPA/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /GPS/i })).toBeInTheDocument();
   });
 
   it('debe mostrar estado vacío en el mapa cuando no hay entradas', () => {
     render(<App />, { wrapper: NoStrictMode });
+    fireEvent.click(screen.getByRole('button', { name: /MAPA/i }));
     expect(screen.getByText(/Sin ubicaciones registradas aún/i)).toBeInTheDocument();
   });
 
   it('debe deshabilitar botones de acción cuando no hay entradas', () => {
     render(<App />, { wrapper: NoStrictMode });
+    fireEvent.click(screen.getByRole('button', { name: /GPS/i }));
     const shareButton = screen.getByRole('button', { name: /Compartir la última ubicación/i });
     const clearButton = screen.getByRole('button', { name: /Limpiar todo el registro/i });
     expect(shareButton).toBeDisabled();
@@ -180,6 +183,7 @@ describe('App', () => {
 
   it('debe renderizar input de nota con label accesible', () => {
     render(<App />, { wrapper: NoStrictMode });
+    fireEvent.click(screen.getByRole('button', { name: /GPS/i }));
     const noteInput = screen.getByLabelText(/Nota para la ubicación a registrar/i);
     expect(noteInput).toBeInTheDocument();
     expect(noteInput.tagName).toBe('INPUT');
@@ -192,6 +196,7 @@ describe('App', () => {
 
   it('debe mostrar el estado del detector de patrones de golpe integrado', () => {
     render(<App />, { wrapper: NoStrictMode });
+    fireEvent.click(screen.getByRole('button', { name: /GOLPES/i }));
     // El detector de patrones está ahora integrado; debe verse su estado dentro de
     // su contenedor .cali-knock-status para no chocar con la meta del audio.
     const knockStatus = document.querySelector('.cali-knock-status');

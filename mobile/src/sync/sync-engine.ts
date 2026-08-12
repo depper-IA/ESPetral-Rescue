@@ -54,12 +54,22 @@ export interface SyncEngineOptions {
   reconnectGrace?: number;
 }
 
+/** Trama de amplitudes crudas CSI (64 subportadoras) */
+export interface RawCsiFrame {
+  zone_id: string;
+  node_id: string;
+  subcarrier_amplitudes: number[];
+  timestamp: string;
+}
+
 /** Listener para eventos del SyncEngine */
 export interface SyncEngineListener {
   /** Invocado cuando cambia el estado de conexión */
   onConnectionStateChange?: (state: ConnectionState) => void;
   /** Invocado cuando se recibe una alerta CSI de zona */
   onAlert?: (alert: ZoneAlert) => void;
+  /** Invocado cuando se recibe una trama CSI cruda con 64 subportadoras */
+  onRawCsi?: (frame: RawCsiFrame) => void;
   /** Invocado cuando se activa el indicador offline persistente (10 reintentos agotados) */
   onPersistentOffline?: (offline: boolean) => void;
   /** Invocado cuando se recibe un acknowledgment de sincronización de ubicaciones */
@@ -257,6 +267,11 @@ export class SyncEngine {
 
     if (!message.type || typeof message.type !== 'string') return;
 
+    if (message.type.endsWith('/csi_raw')) {
+      this.handleCsiRawMessage(message);
+      return;
+    }
+
     if (CSI_TOPIC_PATTERN.test(message.type)) {
       this.handleCsiMessage(message);
       return;
@@ -277,6 +292,22 @@ export class SyncEngine {
     };
 
     this.listener.onSyncAck?.(ack);
+  }
+
+  private handleCsiRawMessage(message: RelayMessage): void {
+    const payload = message.payload as Record<string, unknown> | null;
+    if (!payload || typeof payload !== 'object') return;
+
+    if (!Array.isArray(payload.subcarrier_amplitudes)) return;
+
+    const frame: RawCsiFrame = {
+      zone_id: typeof payload.zone_id === 'string' ? payload.zone_id : this.extractZoneIdFromTopic(message.type),
+      node_id: typeof payload.node_id === 'string' ? payload.node_id : 'esp32',
+      subcarrier_amplitudes: payload.subcarrier_amplitudes as number[],
+      timestamp: typeof payload.timestamp === 'string' ? payload.timestamp : new Date().toISOString(),
+    };
+
+    this.listener.onRawCsi?.(frame);
   }
 
   private handleCsiMessage(message: RelayMessage): void {
