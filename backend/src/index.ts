@@ -4,6 +4,7 @@
  * Inicializa todos los componentes del sistema:
  * - Base de datos SQLite con SQLCipher
  * - Broker MQTT (Aedes) en puertos 1883 (MQTT nativo) y 9003 (WebSocket MQTT crudo, reservado)
+ * - Anuncio mDNS del broker MQTT como cali-backend.local (ver mdns-announcer.ts)
  * - Motor de puntuación compuesta
  * - WebSocket relay JSON para apps móviles (puerto 9001, según design.md)
  * - Servidor Express con dashboard en puerto 3000
@@ -16,11 +17,12 @@
  */
 
 import { initializeDatabase } from './database.js';
-import { createMqttBroker } from './mqtt-broker.js';
+import { createMqttBroker, DEFAULT_MQTT_PORT } from './mqtt-broker.js';
 import { createDashboardServer } from './server.js';
 import { createWsRelay } from './ws-relay.js';
 import { ScoringEngine } from './scoring-engine.js';
 import { validateCsiPayload } from './mqtt-broker.js';
+import { startMdnsAnnouncer } from './mdns-announcer.js';
 
 const HTTP_PORT = parseInt(process.env.CALI_HTTP_PORT || '3000', 10);
 const DB_KEY = process.env.CALI_DB_KEY;
@@ -43,6 +45,11 @@ async function main() {
   const broker = createMqttBroker({ tokens: internalTokens, db });
   await broker.ready;
   console.log('[cali] Broker MQTT iniciado');
+
+  // 3.1. Anunciar el broker MQTT via mDNS con hostname estable (cali-backend.local)
+  // Elimina la dependencia de una IP fija: los nodos ESP32 resuelven el backend
+  // por nombre aunque la laptop cambie de red o de IP entre despliegues de campo.
+  const mdnsAnnouncer = startMdnsAnnouncer(DEFAULT_MQTT_PORT);
 
   // 4. Inicializar motor de puntuación
   const scoringEngine = new ScoringEngine({ db, broker });
@@ -138,6 +145,7 @@ async function main() {
   // Apagado limpio
   const shutdown = async () => {
     console.log('\n[cali] Apagando servidor...');
+    await mdnsAnnouncer.stop();
     await relay.close();
     await server.stop();
     await broker.close();

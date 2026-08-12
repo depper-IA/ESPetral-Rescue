@@ -15,6 +15,7 @@
   "dependencies": {
     "aedes": "0.51.3",
     "better-sqlite3": "npm:better-sqlite3-multiple-ciphers@13.0.3",
+    "bonjour-service": "1.4.4",
     "express": "4.21.2",
     "mqtt": "5.10.4",
     "ws": "8.18.1"
