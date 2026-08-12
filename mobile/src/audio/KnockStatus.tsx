@@ -1,11 +1,18 @@
 /**
- * Componente que muestra el estado del detector de patrones de golpe.
+ * Componentes que muestran el estado del detector de patrones de golpe.
  *
- * Información mostrada:
+ * `KnockStatus`: información no crítica, mostrada en su lugar habitual
+ * dentro de AudioSection (no sticky).
  * - Cantidad de picos filtrados dentro de la ventana deslizante de 6s.
  * - Estado del detector (Detectando / Detenido).
- * - Banner pulsante de alerta cuando se detecta un patrón válido.
  * - Resumen del último patrón detectado (timestamp + confianza).
+ *
+ * `KnockAlertBanner`: banner crítico de alerta, fijo en la parte superior
+ * del viewport (ver App.tsx). Se separó del flujo normal de AudioSection
+ * porque si el usuario hace scroll fuera de esa sección (ej. para ver el
+ * mapa), una alerta no-sticky deja de ser visible — inaceptable para una
+ * señal de "posible víctima detectada". Fondo sólido (no rgba compuesto)
+ * para garantizar contraste >= 4.5:1 con texto blanco.
  *
  * Accesibilidad: el banner de alerta usa role="alert" para ser anunciado
  * por lectores de pantalla cuando aparece.
@@ -43,16 +50,31 @@ export function KnockStatus({ knockState }: KnockStatusProps): ReactNode {
       <p className="cali-knock-line">
         Estado: {knockState.isDetecting ? 'Detectando' : 'Detenido'}
       </p>
-      {knockState.alertActive && last && (
-        <div role="alert" className="cali-knock-alert">
-          ALERTA: Patrón de golpe detectado ({last.peakCount} picos, intervalo
-          medio {Math.round(last.meanInterval)} ms)
-        </div>
-      )}
       {last && lastTimeText && lastConfidenceText && (
         <p className="cali-knock-last-pattern">
           Último patrón: {lastTimeText} (confianza {lastConfidenceText})
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Banner crítico de alerta de golpe, fijo en la parte superior del
+ * viewport. Renderizado a nivel de App (no dentro de AudioSection) para
+ * que permanezca visible sin importar hacia dónde haga scroll el usuario.
+ */
+export function KnockAlertBanner({ knockState }: KnockStatusProps): ReactNode {
+  if (!knockState.alertActive) return null;
+  const last = knockState.lastPattern;
+
+  return (
+    <div role="alert" className="cali-knock-alert-banner">
+      ALERTA: Patrón de golpes detectado
+      {last && (
+        <div className="cali-knock-alert-banner-detail">
+          {last.peakCount} picos, intervalo medio {Math.round(last.meanInterval)} ms
+        </div>
       )}
     </div>
   );

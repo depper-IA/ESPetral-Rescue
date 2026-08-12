@@ -108,14 +108,14 @@ describe('MapView — Contratos y lógica', () => {
     });
   });
 
-  describe('Requisito 3.5 — Touch target mínimo 44×44px', () => {
-    it('constante TOUCH_TARGET_SIZE es 44', () => {
+  describe('Requisito 3.5 — Touch target mínimo 48×48px', () => {
+    it('constante TOUCH_TARGET_SIZE es 48', () => {
       // Verificamos que el tamaño está definido correctamente
       // en la interfaz pública del componente
-      const TOUCH_TARGET_SIZE = 44;
-      expect(TOUCH_TARGET_SIZE).toBe(44);
-      // El DivIcon usa iconSize [44, 44] y iconAnchor [22, 22]
-      expect(TOUCH_TARGET_SIZE / 2).toBe(22);
+      const TOUCH_TARGET_SIZE = 48;
+      expect(TOUCH_TARGET_SIZE).toBe(48);
+      // El DivIcon usa iconSize [48, 48] y iconAnchor [24, 24]
+      expect(TOUCH_TARGET_SIZE / 2).toBe(24);
     });
   });
 

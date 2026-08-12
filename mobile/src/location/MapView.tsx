@@ -15,7 +15,7 @@ import type { LocationEntry } from './location-engine';
 const MAX_MARKERS = 200;
 
 /** Tamaño mínimo de touch target para marcadores (CSS px) */
-const TOUCH_TARGET_SIZE = 44;
+const TOUCH_TARGET_SIZE = 48;
 
 /** URL de tiles de OpenStreetMap */
 const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -37,7 +37,7 @@ function formatTimestamp(iso: string): string {
 }
 
 /**
- * Crea un ícono circular con tamaño mínimo de touch target (44×44px).
+ * Crea un ícono circular con tamaño mínimo de touch target (48×48px).
  */
 function createMarkerIcon(): L.DivIcon {
   return L.divIcon({
@@ -358,7 +358,7 @@ const mapStyles = `
     border: 3px solid #fff;
     border-radius: 50%;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-    /* El contenedor padre (44x44) asegura el touch target mínimo */
+    /* El contenedor padre (48x48) asegura el touch target mínimo */
   }
 
   .cali-map-popup {

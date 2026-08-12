@@ -32,9 +32,26 @@ import { useAudioEngine, type AudioEngineState } from './audio/useAudioEngine';
 import { useKnockDetector, type KnockDetectorState } from './audio/useKnockDetector';
 import { AudioVisualizers } from './audio/AudioVisualizers';
 import { AudioDebugPanel } from './audio/AudioDebugPanel';
-import { KnockStatus } from './audio/KnockStatus';
+import { KnockStatus, KnockAlertBanner } from './audio/KnockStatus';
 import { useLocationEntrySync } from './sync/useLocationEntrySync';
 import { getOrCreateDeviceToken } from './sync/device-token';
+import { appStyles } from './App.styles';
+
+/**
+ * Alto reservado (px) para el contenido cuando la barra de sync fija está
+ * activa (Fix 4). Debe cubrir el alto real de `.cali-sync-bar-fixed` más
+ * el padding-top base de `.cali-app` (16px) para que el contenido no quede
+ * tapado. Valor con margen de seguridad, no pixel-perfect.
+ */
+const SYNC_BAR_OFFSET_PX = 56;
+
+/**
+ * Alto reservado (px) para el contenido cuando el banner de alerta de
+ * golpe está activo (Fix 1). Debe cubrir el alto real de
+ * `.cali-knock-alert-banner` (título + detalle, posible wrap en pantallas
+ * angostas) más el padding-top base de `.cali-app` (16px).
+ */
+const ALERT_BANNER_OFFSET_PX = 108;
 
 /** URL del backend WebSocket relay. Configurable vía env en build. */
 function resolveBackendWsUrl(): string {
@@ -83,6 +100,20 @@ function SyncIndicator({ state, persistentOffline }: { state: ConnectionState; p
     >
       <span className="cali-sync-dot" aria-hidden="true" />
       <span>{label}</span>
+    </div>
+  );
+}
+
+/**
+ * Fix 4: barra de sync persistente, fija en la parte superior del
+ * viewport, visible sin importar el scroll de la página. Solo se renderiza
+ * cuando no hay una alerta de golpe activa: el banner de alerta (Fix 1)
+ * tiene prioridad visual absoluta y ocupa ese mismo espacio.
+ */
+function SyncStatusBar({ state, persistentOffline }: { state: ConnectionState; persistentOffline: boolean }): ReactNode {
+  return (
+    <div className="cali-sync-bar-fixed">
+      <SyncIndicator state={state} persistentOffline={persistentOffline} />
     </div>
   );
 }
@@ -189,7 +220,7 @@ function AudioSection({
         />
       )}
       <div className="cali-rms-meter" aria-hidden="true">
-        <div className="cali-rms-bar" style={{ width: `${pct}%` }} />
+        <div className="cali-rms-bar" style={{ transform: `scaleX(${pct / 100})` }} />
       </div>
       <p className="cali-rms-readout">
         Nivel RMS: {(rmsLevel * 100).toFixed(0)}%
@@ -416,11 +447,23 @@ export function App(): ReactNode {
   }, []);
 
   return (
-    <div className="cali-app">
+    <div
+      className="cali-app"
+      style={{
+        paddingTop: knockState.alertActive ? ALERT_BANNER_OFFSET_PX : SYNC_BAR_OFFSET_PX,
+      }}
+    >
+      {/* Fix 1: banner de alerta de golpe, fijo y dominante. Tiene prioridad
+          absoluta sobre la barra de sync (Fix 4), que se oculta mientras
+          la alerta esté activa. */}
+      <KnockAlertBanner knockState={knockState} />
+      {!knockState.alertActive && (
+        <SyncStatusBar state={syncState} persistentOffline={persistentOffline} />
+      )}
+
       <header className="cali-header">
         <h1>ESPetral Rescue</h1>
         <p className="cali-tagline">Herramienta de campo para búsqueda y rescate</p>
-        <SyncIndicator state={syncState} persistentOffline={persistentOffline} />
       </header>
 
       <main>
@@ -478,273 +521,11 @@ export function App(): ReactNode {
         </section>
       </main>
 
-      {/* Estilos inline para no requerir CSS modules en este commit */}
+      {/* Estilos inline para no requerir CSS modules en este commit.
+          Definidos en App.styles.ts (extraídos para respetar el umbral de
+          600 líneas por archivo). */}
       <style>{appStyles}</style>
     </div>
   );
 }
 
-/** Estilos inline del App. Mantener aquí hasta que se introduzca un sistema de estilos. */
-const appStyles = `
-  .cali-app {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 16px;
-    color: #1a1a1a;
-    background: #fff;
-  }
-
-  .cali-header {
-    margin-bottom: 24px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid #e0e0e0;
-  }
-  .cali-header h1 {
-    margin: 0 0 4px 0;
-    font-size: 24px;
-  }
-  .cali-tagline {
-    margin: 0 0 12px 0;
-    color: #555;
-    font-size: 14px;
-  }
-
-  .cali-sync-indicator {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 500;
-  }
-  .cali-sync-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: currentColor;
-  }
-  .cali-sync-connected { background: #e6f4ea; color: #1e7a3a; }
-  .cali-sync-connecting { background: #fff4e5; color: #a8540c; }
-  .cali-sync-disconnected { background: #f0f0f0; color: #555; }
-  .cali-sync-offline { background: #fde7e9; color: #b3243a; }
-
-  .cali-section {
-    margin-bottom: 24px;
-    padding: 16px;
-    background: #fafafa;
-    border-radius: 8px;
-    border: 1px solid #eee;
-  }
-  .cali-section h2 {
-    margin: 0 0 8px 0;
-    font-size: 18px;
-  }
-  .cali-section h3 {
-    margin: 0 0 8px 0;
-    font-size: 16px;
-  }
-  .cali-section-meta {
-    margin: 0 0 12px 0;
-    font-size: 14px;
-    color: #555;
-  }
-  .cali-section-footnote {
-    margin: 12px 0 0 0;
-    font-size: 12px;
-    color: #888;
-    font-style: italic;
-  }
-
-  .cali-label {
-    display: block;
-    font-size: 14px;
-    font-weight: 500;
-    margin-bottom: 6px;
-  }
-  .cali-input {
-    width: 100%;
-    padding: 12px 16px;
-    font-size: 16px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    margin-bottom: 12px;
-    min-height: 48px;
-    box-sizing: border-box;
-  }
-
-  .cali-button {
-    min-height: 48px;
-    min-width: 48px;
-    padding: 12px 20px;
-    font-size: 14px;
-    font-weight: 600;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    background: #f0f0f0;
-    color: #1a1a1a;
-    touch-action: manipulation;
-  }
-  .cali-button:hover:not(:disabled) {
-    background: #e5e5e5;
-  }
-  .cali-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .cali-button-primary {
-    background: #1976d2;
-    color: #fff;
-  }
-  .cali-button-primary:hover:not(:disabled) {
-    background: #155fa0;
-  }
-  .cali-button-warn {
-    background: #f57c00;
-    color: #fff;
-  }
-  .cali-button-warn:hover:not(:disabled) {
-    background: #d96b00;
-  }
-  .cali-button-danger {
-    background: #d32f2f;
-    color: #fff;
-  }
-  .cali-button-danger:hover:not(:disabled) {
-    background: #b71c1c;
-  }
-
-  .cali-actions-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-
-  .cali-error {
-    margin: 8px 0 0 0;
-    padding: 8px 12px;
-    background: #fde7e9;
-    color: #b3243a;
-    border-radius: 4px;
-    font-size: 14px;
-  }
-
-  .cali-rms-meter {
-    width: 100%;
-    height: 8px;
-    background: #e0e0e0;
-    border-radius: 4px;
-    overflow: hidden;
-    margin-bottom: 8px;
-  }
-  .cali-rms-bar {
-    height: 100%;
-    background: #4caf50;
-    transition: width 100ms ease-out;
-  }
-  .cali-rms-readout {
-    margin: 0 0 12px 0;
-    font-size: 12px;
-    color: #666;
-  }
-
-  .cali-visualizers {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin: 12px 0;
-  }
-  .cali-waveform-canvas,
-  .cali-spectrum-canvas {
-    width: 100%;
-    background: #0a0a0a;
-    border-radius: 4px;
-    display: block;
-  }
-  .cali-waveform-canvas { height: 80px; }
-  .cali-spectrum-canvas { height: 100px; }
-
-  .cali-knock-status {
-    margin-top: 12px;
-    padding: 12px;
-    border-radius: 4px;
-    background: #f5f5f5;
-    font-size: 14px;
-  }
-  .cali-knock-line {
-    margin: 0 0 4px 0;
-    font-size: 14px;
-  }
-  .cali-knock-last-pattern {
-    margin: 6px 0 0 0;
-    font-size: 13px;
-    color: #444;
-  }
-  .cali-knock-alert {
-    margin-top: 8px;
-    padding: 10px 12px;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.2);
-    color: white;
-    font-weight: 700;
-    font-size: 15px;
-    letter-spacing: 0.5px;
-  }
-  .cali-knock-status[data-active='true'] {
-    background: #d32f2f;
-    color: white;
-    animation: cali-alert-pulse 0.5s ease-in-out infinite alternate;
-  }
-  @keyframes cali-alert-pulse {
-    from { background: #d32f2f; }
-    to { background: #b71c1c; }
-  }
-
-  .cali-alerts-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .cali-alert-item {
-    padding: 8px 12px;
-    background: #fff4e5;
-    border-left: 3px solid #f57c00;
-    border-radius: 4px;
-    margin-bottom: 6px;
-    font-size: 14px;
-  }
-
-  .cali-debug-panel {
-    margin-top: 12px;
-    padding: 12px;
-    background: #1a1a2e;
-    color: #e0e0e0;
-    border-radius: 4px;
-    font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace;
-    font-size: 13px;
-    line-height: 1.5;
-  }
-  .cali-debug-panel-title {
-    font-weight: bold;
-    margin-bottom: 8px;
-    color: #a0a0ff;
-  }
-  .cali-debug-row {
-    display: flex;
-    justify-content: space-between;
-  }
-  .cali-debug-divider {
-    border-top: 1px solid #444;
-    margin: 8px 0;
-  }
-  .cali-debug-panel[data-active='true'] {
-    border: 2px solid #ff5252;
-  }
-  .cali-debug-toggle {
-    font-size: 12px;
-    padding: 4px 8px;
-    margin-left: 8px;
-  }
-`;
