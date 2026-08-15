@@ -18,7 +18,7 @@ Desarrollado en respuesta a la emergencia en Cali, Colombia · Por [Sam Wilkie](
 
 ## Que Es
 
-ESPetral Rescue es un sistema de deteccion multicomponente disenado para ayudar a los equipos de busqueda y rescate a localizar personas atrapadas bajo escombros o estructuras colapsadas. Opera bajo la filosofia **offline-first** (100% autonomo en red local aislada air-gapped) desde un computador portatil en el puesto de mando en el sitio del siniestro, sin requerir conexion a internet ni infraestructura en la nube.
+ESPetral Rescue es un sistema de deteccion multicomponente disenado para ayudar a los equipos de busqueda y rescate a localizar **personas y animales / mascotas** atrapadas bajo escombros o estructuras colapsadas mediante la deteccion de micro-movimiento biologico, golpes y patrones respiratorios. Opera bajo la filosofia **offline-first** (100% autonomo en red local aislada air-gapped) desde un computador portatil en el puesto de mando en el sitio del siniestro, sin requerir conexion a internet ni infraestructura en la nube.
 
 **No es un reemplazo para equipos de rescate profesionales**: es un multiplicador de fuerza tactico para rescatistas y voluntarios de campo que operan con recursos limitados en situaciones de emergencia.
 
@@ -106,6 +106,54 @@ Hasta la fecha, el proyecto cuenta con las siguientes capacidades desarrolladas,
 
 ### 4. Capa en la Nube (Diseño de Arquitectura Propuesta — No Implementada en Campo)
 - **Estado de la implementación**: La infraestructura en la nube (AWS Serverless con SAM, API Gateway, Lambda y DynamoDB) fue formulada como diseño arquitectónico, pero **nunca se implementó en campo** debido a las restricciones críticas de tiempo durante la emergencia, priorizando al 100% la estabilidad del despliegue local air-gapped (ESP32, broker local y PWA táctica).
+
+---
+
+## Consideraciones Éticas y Madurez del Sistema
+
+> [!CAUTION]
+> **Aviso de Responsabilidad Ética y Operativa**:
+> Este proyecto se encuentra en **fase experimental y de validación de laboratorio**. **NO debe utilizarse como sistema de decisión único o crítico en operaciones reales de rescate sin la presencia y confirmación de equipos de búsqueda y rescate urbanos (USAR) o unidades caninas K9 profesionales.**
+> 
+> En un escenario de colapso estructural, un **falso positivo** ("detectar vida donde no la hay") genera una falsa esperanza devastadora para los familiares, desvía maquinaria y arriesga la vida de rescatistas en áreas vacías. Por otro lado, un **falso negativo** ("no detectar a una víctima atrapada") puede costar una vida.
+
+### ¿Por qué los resultados aún no son concluyentes para campo abierto?
+
+1. **Ruido ambiental y dinámicas de escombros**:
+   - El asentamiento progresivo de escombros, el viento y la vibración de generadores o maquinaria pesada generan perturbaciones electromagnéticas y mecánicas complejas.
+   - Aunque se han implementado filtros de periodicidad (0.2–0.5 Hz) y umbrales de prominencia espectral de 20x (~13 dB), la discriminación frente a interferencias aleatorias en escombros húmedos o jaulas de Faraday parciales (mallas de acero) aún requiere validación con capturas de campo reales.
+2. **Saneamiento de fase CSI (Hardware Real vs. Simulación)**:
+   - La extracción de fase cruda `atan2f(Q,I)` en ESP-IDF sufre de errores de offset de frecuencia (CFO/SFO) y saltos de fase aleatorios por paquete. Se requiere completar las pruebas de calibración en banco de pruebas con metrónomos físicos para definir el veredicto técnico final.
+3. **Rescate de personas y animales**:
+   - El sistema tiene potencial para detectar tanto **personas como animales domésticos atrapados (perros, gatos)** debido a su patrón de respiración y movimiento biológico. Sin embargo, los animales pequeños poseen frecuencias respiratorias más altas (20–60 RPM) que requieren calibración y perfiles dinámicos adicionales en el motor de detección.
+
+---
+
+## Roadmap de Validación Técnica
+
+```
+┌─────────────────────────┐     ┌─────────────────────────┐     ┌─────────────────────────┐     ┌─────────────────────────┐
+│  FASE 1 (COMPLETADA)    │     │  FASE 2 (EN CURSO)      │     │  FASE 3 (PENDIENTE)     │     │  FASE 4 (FUTURO)        │
+│  - 427 tests pasando    │────>│  - Capturas de fase     │────>│  - Pruebas cruzadas con │────>│  - Despliegue guiado    │
+│  - Pipeline MQTT/SQLite │     │    con metrónomo real   │     │    canes K9 y bomberos  │     │    como herramienta     │
+│  - PWA con audio y radar│     │  - Calibración CFO/SFO  │     │  - Escenarios de ruina  │     │    de triaje secundario │
+│  - Firmwares separados  │     │  - Gate GO/NO-GO        │     │    controlada           │     │    supervisada          │
+└─────────────────────────┘     └─────────────────────────┘     └─────────────────────────┘     └─────────────────────────┘
+```
+
+1. **Fase 1 — Base de Software y Laboratorio (Completada)**:
+   - Arquitectura local 100% offline-first con broker MQTT Aedes y base SQLite con SQLCipher.
+   - PWA móvil con motor de audio pasabanda (200–4000 Hz) y detector de respiración por CSI (0.2–0.5 Hz).
+   - Separación modular de firmwares para Nodo Mama (ESP32-S3), Nodo Bebe (ESP32-C6 LCD) y Satélite (ESP32-C3).
+   - Suite completa con 427 pruebas automatizadas pasando.
+2. **Fase 2 — Calibración y Banco de Pruebas Físico (En Curso)**:
+   - Capturas con hardware real en 3 escenarios controlados (sala vacía, metrónomo 12 BPM, metrónomo 20 BPM).
+   - Medición del jitter residual de fase y decisión GO/NO-GO para la extracción de signos vitales.
+3. **Fase 3 — Validación con Equipos USAR y Canes K9 (Pendiente)**:
+   - Calibración en escenarios de entrenamiento de colapso controlado con equipos de bomberos y perros de búsqueda.
+   - Medición rigurosa de matrices de confusión (sensibilidad, especificidad, tasa de falsos positivos).
+4. **Fase 4 — Herramienta de Soporte Táctico Supervisado (Objetivo Final)**:
+   - Uso como multiplicador de fuerza de triaje rápido, siempre subordinado a los protocolos y verificación física de los rescatistas.
 
 ---
 
