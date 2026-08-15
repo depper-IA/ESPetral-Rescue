@@ -18,36 +18,36 @@ Desarrollado en respuesta a la emergencia en Cali, Colombia · Por [Sam Wilkie](
 
 ## Que Es
 
-ESPetral Rescue es un sistema de deteccion multicomponente disenado para ayudar a los equipos de busqueda y rescate a localizar personas atrapadas bajo escombros o estructuras colapsadas. Opera bajo la filosofia **offline-first** (autonomo en red local aislada air-gapped) desde un computador portatil en el puesto de mando en el sitio del siniestro y, opcionalmente, sincroniza telemetria agregada hacia AWS para coordinacion remota.
+ESPetral Rescue es un sistema de deteccion multicomponente disenado para ayudar a los equipos de busqueda y rescate a localizar personas atrapadas bajo escombros o estructuras colapsadas. Opera bajo la filosofia **offline-first** (100% autonomo en red local aislada air-gapped) desde un computador portatil en el puesto de mando en el sitio del siniestro, sin requerir conexion a internet ni infraestructura en la nube.
 
 **No es un reemplazo para equipos de rescate profesionales**: es un multiplicador de fuerza tactico para rescatistas y voluntarios de campo que operan con recursos limitados en situaciones de emergencia.
 
 ---
 
-## Arquitectura y Flujo del Sistema
+## Arquitectura y Flujo del Sistema (100% Local / Offline-First)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  ZONA DE ESCOMBROS (CAMPO)                                              │
-│  Nodos ESP32 (S3 / C6 / C3)                                             │
-│  - Captura CSI a 20 fps / Fase cruda OFDM / LED de alerta               │
+│  Nodos ESP32 (Mama S3 / Bebe C6 LCD / Satelite C3)                     │
+│  - Captura CSI a 20 fps / Fase cruda OFDM / LED de alerta / LCD local   │
 └────────────────────────────────────┬────────────────────────────────────┘
                                      │ MQTT (TCP 1883 / PSK)
 ┌────────────────────────────────────▼────────────────────────────────────┐
 │  PUESTO DE MANDO LOCAL (PORTATIL DE CAMPO)                              │
-│  - Broker MQTT Aedes integrado                                          │
+│  - Broker MQTT Aedes integrado (TCP 1883 / WS 9001)                     │
 │  - SQLite con cifrado SQLCipher (auto-purga a las 72h)                  │
 │  - Motor de Puntuacion Compuesta Tripartita                             │
 │  - Servidor Express + WebSocket Relay (puerto 3000)                     │
-└───────────────────┬─────────────────────────────────┬───────────────────┘
-                    │ WebSocket                       │ HTTPS (cada 30s)
-┌───────────────────▼─────────────────┐   ┌───────────▼───────────────────┐
-│  PWA MOVIL DE CAMPO                 │   │  NUBE AWS (FREE TIER)         │
-│  - Analisis acustico de golpes      │   │  - API Gateway + Lambda       │
-│  - Registro GPS cifrado (AES-GCM)   │   │  - DynamoDB (TTL 14 dias)     │
-│  - Radar de proximidad y mapa       │   │  - Dashboard remoto           │
-│  - 100% offline-first               │   │  - Distribucion OTA firmware  │
-└─────────────────────────────────────┘   └───────────────────────────────┘
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │ WebSocket local
+┌────────────────────────────────────▼────────────────────────────────────┐
+│  PWA MOVIL DE CAMPO                                                     │
+│  - Analisis acustico de golpes (200-4000 Hz)                            │
+│  - Detector de patron de respiracion por CSI (0.2-0.5 Hz)               │
+│  - Buscador Radar 360 y Checklist de posicionamiento                    │
+│  - Registro GPS cifrado (AES-GCM) y mapa tactico offline                │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Motor de Puntuacion Compuesta por Zona
@@ -104,10 +104,8 @@ Hasta la fecha, el proyecto cuenta con las siguientes capacidades desarrolladas,
 - **Modulo de Radar y Detector de Respiracion (`RadarSeeker.tsx` / `breathing-detector.ts`)**: Interfaz visual de busqueda dirigida para estimar proximidad de victimas mediante señales combinadas.
 - **Cartografia Táctica (`MapComponent.tsx`)**: Renderizado de mapa con Leaflet.js para ubicacion de zonas y densidad de equipos de busqueda.
 
-### 4. Capa en la Nube Opcional (`cloud/`) — AWS Serverless Free Tier
-- **Plantilla AWS SAM**: API Gateway HTTP, funciones Lambda en Node.js y tabla DynamoDB con TTL de 14 dias.
-- **Coste Cero**: Disenado para operar dentro del Free Tier de AWS durante los 14 dias criticos de una emergencia de rescate.
-- **Distribucion de Firmware y Dashboard**: S3 y CloudFront para entrega de actualizaciones OTA a los puestos de mando.
+### 4. Capa en la Nube (Diseño de Arquitectura Propuesta — No Implementada en Campo)
+- **Estado de la implementación**: La infraestructura en la nube (AWS Serverless con SAM, API Gateway, Lambda y DynamoDB) fue formulada como diseño arquitectónico, pero **nunca se implementó en campo** debido a las restricciones críticas de tiempo durante la emergencia, priorizando al 100% la estabilidad del despliegue local air-gapped (ESP32, broker local y PWA táctica).
 
 ---
 
@@ -242,8 +240,6 @@ flash.bat COM3
 ![MQTT](https://img.shields.io/badge/MQTT-660066?style=flat-square&logo=mqtt&logoColor=white)
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-E7352C?style=flat-square&logo=espressif&logoColor=white)
 ![FreeRTOS](https://img.shields.io/badge/FreeRTOS-00A86B?style=flat-square)
-![AWS Lambda](https://img.shields.io/badge/AWS_Lambda-FF9900?style=flat-square&logo=awslambda&logoColor=white)
-![DynamoDB](https://img.shields.io/badge/DynamoDB-4053D6?style=flat-square&logo=amazondynamodb&logoColor=white)
 
 </div>
 
