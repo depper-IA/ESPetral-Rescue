@@ -1,0 +1,20 @@
+# CALI CSI Node - Defaults específicos para ESP32-C6
+# Aplicado DESPUÉS de sdkconfig.defaults cuando se compila con
+#   idf.py set-target esp32c6
+#
+# Chips ESP32-C6 relevantes:
+#   - ESP32-C6-DevKitC-1:        LED RGB GPIO 8 (no usar sin driver WS2812)
+#   - ESP32-C6 Super Mini:       LED onboard GPIO 8
+#   - ESP32-C6-DevKitM-1:        LED onboard GPIO 8
+
+# GPIO del LED onboard (compatible con Super Mini y DevKitC-1)
+CONFIG_CALI_LED_GPIO=8
+
+# CPU freq por defecto del C6 (160 MHz o 240 MHz)
+CONFIG_ESP32C6_DEFAULT_CPU_FREQ_160=y
+
+# Crystal frequency (C6 típico: 40MHz)
+CONFIG_XTAL_FREQ_40=y
+
+# Wi-Fi country code
+CONFIG_WIFI_COUNTRY_CODE="01"

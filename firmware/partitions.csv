@@ -1,0 +1,33 @@
+# Name,   Type, SubType, Offset,   Size,     Flags
+# Note: NVS partition is 24KB to store configuration comfortably
+# Layout supports dual-OTA firmware updates (Task 17)
+#
+# otadata es OBLIGATORIA para OTA: esp_ota_set_boot_partition() (ver
+# ota_update.c) la usa para persistir qué slot (ota_0/ota_1) debe
+# arrancar el bootloader tras una actualización. Sin esta partición,
+# el OTA descarga y verifica el firmware correctamente pero el
+# bootloader nunca sabe que debe cambiar de slot — nunca arranca la
+# nueva versión.
+#
+# Sin partición 'factory': es el layout dual-OTA estándar de ESP-IDF.
+# Con otadata vacía el bootloader arranca ota_0, así que 'factory' sería
+# 1MB desperdiciado. Eliminarla permite dar 1.75MB a cada slot OTA.
+#
+# Dimensionamiento: con slots de 1MB el binario medido (0xfc880 = 1.01MB)
+# dejaba solo 0x3780 (14KB, 1%) libres — cualquier función nueva no
+# compilaría y el primer OTA fallaría, porque la imagen nueva casi
+# siempre crece. Con 0x1C0000 (1.75MB) por slot queda ~44% libre.
+#
+# Total: 0x3A0000 (3.63MB). Esta tabla es única para los 3 targets, así
+# que se dimensiona contra la placa de menor flash (4MB en las Super Mini
+# de C3/C6). La S3 de pruebas tiene 16MB medidos (`esptool flash_id`),
+# de modo que aquí quedan ~12MB sin usar en esa placa: es el precio de
+# una sola tabla portable entre chips. Ver la nota en sdkconfig.defaults.
+#
+# Particiones app alineadas a 0x10000, otadata alineada a 0x2000, como
+# requiere ESP-IDF.
+nvs,      data, nvs,     0x9000,   0x6000,
+otadata,  data, ota,     0xf000,   0x2000,
+phy_init, data, phy,     0x11000,  0x1000,
+ota_0,    app,  ota_0,   0x20000,  0x1C0000,
+ota_1,    app,  ota_1,   0x1e0000, 0x1C0000,

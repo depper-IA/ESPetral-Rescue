@@ -37,12 +37,10 @@ describe('Dashboard Server', () => {
       expect(response.headers.get('content-type')).toContain('text/html');
     });
 
-    it('el HTML contiene Leaflet.js y el título del panel', async () => {
+    it('el HTML contiene el título de la PWA unificada', async () => {
       const response = await fetch(`http://localhost:${TEST_PORT}/`);
       const html = await response.text();
-      expect(html).toContain('leaflet');
-      expect(html).toContain('ESPetral Rescue');
-      expect(html).toContain('Mapa de Zonas');
+      expect(html).toContain('ESPetral');
     });
   });
 
@@ -117,6 +115,68 @@ describe('Dashboard Server', () => {
       expect(() => {
         server.broadcastCsiUpdate('zone-1', 0.75);
       }).not.toThrow();
+    });
+
+    it('broadcastCsiUpdate no lanza error con rssi', () => {
+      expect(() => {
+        server.broadcastCsiUpdate('zone-1', 0.75, 'node-1', -62);
+      }).not.toThrow();
+    });
+
+    it('broadcastCsiUpdate incluye rssi en el mensaje csi_update cuando se provee', async () => {
+      const ws = new WebSocket(`ws://localhost:${TEST_PORT}/ws/dashboard`);
+      const done = new Promise<void>((resolve, reject) => {
+        ws.on('message', (data) => {
+          const msg = JSON.parse(data.toString());
+          if (msg.type === 'zones_sync') {
+            setTimeout(() => {
+              server.broadcastCsiUpdate('zone-rssi', 0.4, 'node-rssi', -58);
+            }, 50);
+          } else if (msg.type === 'csi_update') {
+            try {
+              expect(msg.zone_id).toBe('zone-rssi');
+              expect(msg.node_id).toBe('node-rssi');
+              expect(msg.motion_probability).toBe(0.4);
+              expect(msg.rssi).toBe(-58);
+              ws.close();
+              resolve();
+            } catch (err) {
+              ws.close();
+              reject(err);
+            }
+          }
+        });
+        ws.on('error', (err) => { ws.close(); reject(err); });
+        setTimeout(() => { ws.close(); reject(new Error('Timeout esperando csi_update')); }, 3000);
+      });
+      await done;
+    });
+
+    it('broadcastCsiUpdate omite el campo rssi del mensaje cuando no se provee', async () => {
+      const ws = new WebSocket(`ws://localhost:${TEST_PORT}/ws/dashboard`);
+      const done = new Promise<void>((resolve, reject) => {
+        ws.on('message', (data) => {
+          const msg = JSON.parse(data.toString());
+          if (msg.type === 'zones_sync') {
+            setTimeout(() => {
+              server.broadcastCsiUpdate('zone-norssi', 0.2, 'node-norssi');
+            }, 50);
+          } else if (msg.type === 'csi_update') {
+            try {
+              expect(msg.zone_id).toBe('zone-norssi');
+              expect('rssi' in msg).toBe(false);
+              ws.close();
+              resolve();
+            } catch (err) {
+              ws.close();
+              reject(err);
+            }
+          }
+        });
+        ws.on('error', (err) => { ws.close(); reject(err); });
+        setTimeout(() => { ws.close(); reject(new Error('Timeout esperando csi_update')); }, 3000);
+      });
+      await done;
     });
 
     it('broadcastZoneAdded no lanza error sin clientes conectados', () => {

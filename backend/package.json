@@ -10,7 +10,9 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "test": "vitest --run",
-    "seed:zones": "node ../scripts/seed-zones.mjs"
+    "seed:zones": "node ../scripts/seed-zones.mjs",
+    "capture:phase-spike": "node scripts/capture-phase-spike.mjs",
+    "analyze:phase-spike": "node scripts/analyze-phase-spike.mjs"
   },
   "dependencies": {
     "aedes": "0.51.3",

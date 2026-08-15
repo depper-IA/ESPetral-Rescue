@@ -495,6 +495,11 @@ export function createWsRelay(options: WsRelayOptions): WsRelayInstance {
     };
 
     if (mqttToken) {
+      // MQTT 3.1.1 [MQTT-3.1.2-22]: el flag Password solo es válido si el
+      // flag Username también está seteado. Sin username, el CONNECT es
+      // inválido y el broker lo rechaza silenciosamente (loop de reconexión
+      // infinito, sin evento 'error' legible).
+      mqttOptions.username = 'ws-relay';
       mqttOptions.password = mqttToken;
     }
 

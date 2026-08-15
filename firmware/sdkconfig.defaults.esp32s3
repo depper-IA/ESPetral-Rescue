@@ -1,0 +1,43 @@
+# CALI CSI Node - Defaults específicos para ESP32-S3
+# Aplicado DESPUÉS de sdkconfig.defaults cuando se compila con
+#   idf.py set-target esp32s3
+#
+# Chips ESP32-S3 relevantes:
+#   - ESP32-S3-DevKitC-1:    LED RGB GPIO 48 (requiere driver WS2812)
+#   - ESP32-S3-Zero / Super Mini: LED onboard GPIO 21
+#   - ESP32-S3-WROOM-1:      sin LED onboard (externo)
+
+# GPIO del LED onboard (default: S3-Zero/Super Mini)
+# Para DevKitC-1 RGB, ajustar a 48 + integrar driver WS2812 en firmware
+CONFIG_CALI_LED_GPIO=21
+
+# CPU freq por defecto del S3 (240 MHz máximo)
+CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240=y
+
+# Crystal frequency (S3 típico: 40MHz)
+CONFIG_XTAL_FREQ_40=y
+
+# Wi-Fi country code
+CONFIG_WIFI_COUNTRY_CODE="01"
+
+# Optimización de tamaño para el firmware (S3 con BLE deshabilitado)
+# Si solo usamos Wi-Fi + CSI, no necesitamos BLE stack
+CONFIG_BT_ENABLED=n
+CONFIG_BT_BLE=n
+
+# Flash de 16MB (medido con `esptool flash_id` → Device 4018, variante
+# N16R8 con 8MB de PSRAM). Sobrescribe el piso conservador de 4MB que
+# sdkconfig.defaults fija para los 3 targets, y usa una tabla de
+# particiones propia con slots OTA de 4MB en vez de 1.75MB.
+# Los targets C3/C6 siguen en 4MB + partitions.csv.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_16mb.csv"
+
+# Consola por USB-Serial-JTAG nativo (no UART0).
+# Las variantes Zero / Super Mini no exponen los pines de UART0
+# (GPIO 43/44) en un conector; el único acceso físico es el USB nativo.
+# Con la consola por defecto en UART0, un técnico que conecta el nodo por
+# USB en campo NO ve ningún log de diagnóstico: el arranque, los errores
+# de configuración NVS y los valores de motion_probability se pierden.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

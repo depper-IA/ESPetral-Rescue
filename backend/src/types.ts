@@ -17,6 +17,11 @@ export interface CsiTelemetryMessage {
   motion_probability: number;
   /** Unique node identifier (1–64 characters) */
   node_id: string;
+  /**
+   * Raw RSSI reading from the ESP32 hardware (dBm), optional for backward
+   * compatibility with nodes that do not yet send it.
+   */
+  rssi?: number;
 }
 
 /**

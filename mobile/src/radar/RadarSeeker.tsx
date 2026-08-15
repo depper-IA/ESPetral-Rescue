@@ -3,19 +3,52 @@
  *
  * Interfaz unificada de búsqueda en tiempo real para campo (móvil, tablet y PC).
  * Integra:
- *  1. Barrido radial 360° con anillos de distancia (0.5m, 1m, 2m, 3m+) y blips dinámicos
+ *  1. Indicador de tendencia de proximidad por RSSI real (nodo único, sin
+ *     posición espacial fabricada — ver Requisito 19)
  *  2. Espectrograma Waterfall de 64 subportadoras CSI en tiempo real
  *  3. Alerta táctica integrada (Despejado / Presencia / Golpe Confirmado)
  *  4. Indicadores de telemetría acústica y fuerza de señal
+ *
+ * Requisito 19 (Single-Node Signal Proximity Indicator): con un único nodo
+ * ESP32 desplegado no existe dato de distancia real. El barrido radial 360°
+ * con anillos de distancia y blips posicionales que existía antes en este
+ * componente fabricaba una posición a partir de motion_probability — se
+ * eliminó por completo (Requisitos 19.4, 19.5). En su lugar se muestra una
+ * tendencia (acercándose / alejándose / estable) derivada de una media móvil
+ * exponencial (EMA) sobre el RSSI real reportado por el nodo.
+ *
+ * Eliminación del panel de "triangulación" (dato fabricado): este componente
+ * tenía además un bloque "MAPA DE TRIANGULACIÓN Y ESTIMACIÓN DE DISTANCIA"
+ * que convertía RSSI a metros vía `Math.pow(10, (-45 - rssi) / 32)`. Se
+ * eliminó por completo, por dos razones independientes y cada una
+ * suficiente por sí sola:
+ *  1. RSSI mide la potencia de la señal de radio entre DOS RADIOS (el nodo
+ *     ESP32 y el punto de acceso WiFi con el que negocia). Una persona
+ *     atrapada bajo escombros no emite WiFi. La "distancia" calculada era
+ *     la distancia estimada al access point, no a una víctima — mostrar
+ *     ese número junto a un ícono de rescate induce a cavar en el lugar
+ *     equivocado.
+ *  2. Aunque el dato de radio fuera relevante, lo que hacía el código no
+ *     era triangulación: triangular con múltiples nodos produce un punto
+ *     (intersección de círculos/rectas), no un radio. Y el cálculo del
+ *     "radio estimado" ni siquiera combinaba las distancias de los nodos
+ *     mostrados — recalculaba un único valor global a partir de
+ *     `proximity.currentRssi`, ignorando por completo los demás nodos.
+ * En su lugar, el panel que ocupaba ese espacio ahora es el detector de
+ * patrón respiratorio (ver `breathing-detector.ts`): la única señal en este
+ * sistema que sí puede indicar honestamente "hay una persona" a partir de
+ * CSI, porque busca periodicidad en 0.2-0.5 Hz (12-30 resp/min), no una
+ * posición fabricada.
  */
 
 import { useEffect, useRef, useState, useMemo } from 'react';
 import type { ZoneAlert, RawCsiFrame } from '../sync/sync-engine';
 import type { KnockDetectorState } from '../audio/useKnockDetector';
+import { analyzeBreathing, type BreathingResult } from './breathing-detector';
 
 export interface RadarSeekerProps {
   /** Últimas alertas de zona con probabilidad de movimiento */
-  alerts?: ZoneAlert[];
+  alerts?: readonly ZoneAlert[];
   /** Última trama CSI de 64 subportadoras recibida en tiempo real */
   rawCsiFrame?: RawCsiFrame | null;
   /** Estado del detector de golpes acústicos */
@@ -24,6 +57,123 @@ export interface RadarSeekerProps {
   activeZoneName?: string;
   /** Estado de conexión al backend */
   isConnected?: boolean;
+  /** Estado de captura del micrófono */
+  isAudioListening?: boolean;
+  /** Callback para activar o desactivar la escucha del micrófono */
+  onToggleAudio?: () => void;
+  /** Nivel de señal RMS del micrófono en tiempo real (0.0 - 1.0) */
+  rmsLevel?: number;
+  /** Error de inicio del micrófono (si ocurrió uno) */
+  startError?: string | null;
+  /** Ángulo estimado de dirección de arribo en grados (-90° Izq a +90° Der) */
+  directionAngle?: number | null;
+}
+
+// --- Tendencia de proximidad por RSSI (Requisito 19) ---
+
+/** Clasificación de tendencia derivada de la EMA de RSSI. */
+export type ProximityTrend = 'approaching' | 'receding' | 'stable' | 'no_data';
+
+export interface ProximityTrendResult {
+  trend: ProximityTrend;
+  /** Última lectura de RSSI cruda (dBm), o null si no hay datos */
+  currentRssi: number | null;
+}
+
+/** Factor de suavizado de la media móvil exponencial. */
+const EMA_ALPHA = 0.3;
+
+/**
+ * Banda muerta en dB: cambios de EMA por debajo de este umbral se
+ * consideran ruido y se clasifican como "estable", no como tendencia real.
+ */
+const DEAD_BAND_DB = 1.5;
+
+/**
+ * Calcula la tendencia de proximidad a partir de un historial de RSSI en
+ * orden cronológico (más antiguo primero, más reciente al final).
+ *
+ * RSSI es negativo en dBm: un valor menos negativo (ej. -50 vs -80)
+ * significa señal más fuerte, es decir, más cerca del nodo.
+ *
+ * Algoritmo: se calcula la serie completa de EMA (alpha=0.3) sobre el
+ * historial, y se compara el último valor de la serie contra el
+ * penúltimo. Si la diferencia supera la banda muerta (±1.5 dB) hacia
+ * arriba, la tendencia es "approaching"; hacia abajo, "receding"; si no,
+ * "stable". Con menos de 2 lecturas no hay base de comparación y se
+ * reporta "stable". Con 0 lecturas se reporta "no_data" explícito — nunca
+ * se fabrica un valor por defecto.
+ */
+export function computeProximityTrend(
+  rssiHistoryChronological: readonly number[],
+): ProximityTrendResult {
+  if (rssiHistoryChronological.length === 0) {
+    return { trend: 'no_data', currentRssi: null };
+  }
+
+  const emaSeries: number[] = [rssiHistoryChronological[0]];
+  for (let i = 1; i < rssiHistoryChronological.length; i++) {
+    emaSeries.push(EMA_ALPHA * rssiHistoryChronological[i] + (1 - EMA_ALPHA) * emaSeries[i - 1]);
+  }
+
+  const currentRssi = rssiHistoryChronological[rssiHistoryChronological.length - 1];
+
+  if (emaSeries.length < 2) {
+    return { trend: 'stable', currentRssi };
+  }
+
+  const currentEma = emaSeries[emaSeries.length - 1];
+  const previousEma = emaSeries[emaSeries.length - 2];
+  const delta = currentEma - previousEma;
+
+  if (delta > DEAD_BAND_DB) {
+    return { trend: 'approaching', currentRssi };
+  }
+  if (delta < -DEAD_BAND_DB) {
+    return { trend: 'receding', currentRssi };
+  }
+  return { trend: 'stable', currentRssi };
+}
+
+/** Cantidad máxima de lecturas de RSSI consideradas para la tendencia (historial corto). */
+const RSSI_HISTORY_WINDOW = 20;
+
+/**
+ * Ventana (ms) sin recibir lecturas tras la cual un nodo deja de contarse
+ * como activo.
+ *
+ * Por qué existe: el buffer de alertas conserva las últimas 50 lecturas sin
+ * expirarlas, así que un nodo que cambia de identidad (por ejemplo al
+ * grabarle un `node_id` nuevo en NVS) seguía apareciendo bajo su ID viejo Y
+ * el nuevo, mostrando dos nodos donde hay una sola placa. En campo eso se
+ * lee como cobertura duplicada que no existe. Los nodos publican cada ~2 s;
+ * 15 s tolera varias pérdidas seguidas sin marcar un nodo vivo como caído.
+ */
+const NODE_ACTIVE_WINDOW_MS = 15_000;
+
+/** Cadencia del reloj interno que expira nodos sin tráfico reciente. */
+const ACTIVE_NODES_TICK_MS = 3_000;
+
+/** Presentación visual por tipo de tendencia (paleta oscura consistente con el resto del componente). */
+const TREND_DISPLAY: Record<ProximityTrend, { label: string; color: string }> = {
+  approaching: { label: 'ACERCÁNDOSE', color: '#10b981' },
+  receding: { label: 'ALEJÁNDOSE', color: '#ef4444' },
+  stable: { label: 'ESTABLE', color: '#8b949e' },
+  no_data: { label: 'SIN DATOS DE SEÑAL', color: '#8b949e' },
+};
+
+// --- Detección de patrón respiratorio (buffer + throttle de análisis) ---
+
+/** Máxima antigüedad de frames retenidos para el análisis de respiración (90s). */
+const BREATHING_BUFFER_MAX_MS = 90_000;
+
+/** El análisis (FFT por subportadora) corre como máximo cada 3s, no en cada frame. */
+const BREATHING_ANALYSIS_INTERVAL_MS = 3_000;
+
+/** Veredicto de respiración asociado a un nodo concreto. */
+export interface BreathingByNode {
+  nodeId: string;
+  result: BreathingResult;
 }
 
 export function RadarSeeker({
@@ -32,12 +182,35 @@ export function RadarSeeker({
   knockState = null,
   activeZoneName = 'Zona de Búsqueda 1',
   isConnected = false,
+  isAudioListening = false,
+  onToggleAudio,
+  rmsLevel = 0,
+  startError = null,
+  directionAngle = null,
 }: RadarSeekerProps) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const waterfallRef = useRef<HTMLCanvasElement | null>(null);
+
+  /*
+   * Reloj interno: sin él, un nodo que deja de transmitir permanecería
+   * listado como activo indefinidamente, porque sin alertas nuevas no hay
+   * re-render que revalúe su antigüedad.
+   */
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), ACTIVE_NODES_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
 
   // Mantiene historial de amplitudes para el waterfall canvas (filas de 64 valores)
   const [csiHistory, setCsiHistory] = useState<number[][]>([]);
+
+  // Un buffer de frames CSI por nodo (ver comentario en el efecto que los
+  // alimenta), y throttle del último análisis ejecutado.
+  const breathingBuffersRef = useRef<
+    Map<string, { amplitudes: readonly number[]; timestampMs: number }[]>
+  >(new Map());
+  const lastBreathingAnalysisRef = useRef(0);
+  const [breathingByNode, setBreathingByNode] = useState<BreathingByNode[]>([]);
 
   // Calcular la probabilidad más alta actual (CSI o golpe acústico)
   const currentMotionProb = useMemo(() => {
@@ -47,7 +220,7 @@ export function RadarSeeker({
     return 0;
   }, [alerts]);
 
-  const isKnockAlert = knockState?.isKnockDetected ?? false;
+  const isKnockAlert = knockState?.alertActive ?? false;
 
   // Determinar insignia de estado global
   const statusInfo = useMemo(() => {
@@ -63,6 +236,49 @@ export function RadarSeeker({
     return { text: 'ÁREA DESPEJADA', color: '#10b981', class: 'alert-clear' };
   }, [currentMotionProb, isKnockAlert]);
 
+  // Historial corto de RSSI en orden cronológico (más antiguo primero) a partir
+  // de las alertas recibidas. `alerts` llega ordenado con la más reciente primero
+  // (ver SyncEngine.addAlert: unshift), por lo que se toman las N más recientes
+  // y se invierten para que la EMA se calcule en orden temporal correcto.
+  const rssiHistoryChronological = useMemo(() => {
+    const withRssi = alerts.filter(
+      (a): a is ZoneAlert & { rssi: number } => typeof a.rssi === 'number',
+    );
+    return withRssi
+      .slice(0, RSSI_HISTORY_WINDOW)
+      .map((a) => a.rssi)
+      .reverse();
+  }, [alerts]);
+
+  const proximity = useMemo(
+    () => computeProximityTrend(rssiHistoryChronological),
+    [rssiHistoryChronological],
+  );
+  const proximityDisplay = TREND_DISPLAY[proximity.trend];
+
+  // Extraer nodos activos únicos recibidos en las alertas
+  const activeNodes = useMemo(() => {
+    const cutoff = nowMs - NODE_ACTIVE_WINDOW_MS;
+    const nodeMap = new Map<string, { node_id: string; rssi: number | null; motion: number }>();
+
+    /*
+     * `alerts` llega con la más reciente primero, así que la primera
+     * aparición de cada node_id es su última lectura.
+     */
+    alerts.forEach((alert) => {
+      if (typeof alert.node_id !== 'string') return;
+      if (alert.receivedAt < cutoff) return;
+      if (nodeMap.has(alert.node_id)) return;
+      nodeMap.set(alert.node_id, {
+        node_id: alert.node_id,
+        rssi: typeof alert.rssi === 'number' ? alert.rssi : null,
+        motion: alert.motion_probability,
+      });
+    });
+
+    return Array.from(nodeMap.values());
+  }, [alerts, nowMs]);
+
   // Actualizar historial CSI para el espectrograma
   useEffect(() => {
     if (rawCsiFrame && Array.isArray(rawCsiFrame.subcarrier_amplitudes)) {
@@ -73,117 +289,67 @@ export function RadarSeeker({
     }
   }, [rawCsiFrame]);
 
-  // Renderizar Barrido Radial 360° en Canvas
+  // Acumular frames CSI para el detector de patrón respiratorio y ejecutar
+  // el análisis cada ~3s (no en cada frame — el análisis hace una FFT por
+  // subportadora y es costoso para correr a la tasa de llegada de frames,
+  // ~5 Hz). El buffer se acota a BREATHING_BUFFER_MAX_MS para no crecer sin
+  // límite en sesiones largas.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!rawCsiFrame || !Array.isArray(rawCsiFrame.subcarrier_amplitudes)) return;
 
-    let animId: number;
-    let angle = 0;
+    /*
+     * Se usa la hora de llegada del cliente, NO `rawCsiFrame.timestamp`: el
+     * ESP32 no tiene RTC y envía su tiempo desde el arranque (se observan
+     * valores como "1970-01-01T00:00:52Z"). Con dos nodos de uptime distinto
+     * esos timestamps difieren en minutos, y al mezclarlos la ventana
+     * aparentaba ~20 min con una tasa de muestreo irrisoria, dejando el
+     * análisis clavado en "datos insuficientes" para siempre.
+     */
+    const nowMsLocal = Date.now();
+    const frame = {
+      amplitudes: rawCsiFrame.subcarrier_amplitudes,
+      timestampMs: nowMsLocal,
+    };
 
-    const render = () => {
-      const w = canvas.width;
-      const h = canvas.height;
-      const cx = w / 2;
-      const cy = h / 2;
-      const radius = Math.min(cx, cy) - 16;
+    /*
+     * Buffer SEPARADO por nodo: cada ESP32 observa un camino de señal
+     * distinto, así que mezclar sus tramas en un mismo análisis no tiene
+     * sentido físico. Analizar por nodo es además lo que aporta valor en
+     * campo — "Bebe detecta respiración y Mamá no" acota el área de búsqueda.
+     */
+    const nodeId = rawCsiFrame.node_id || 'desconocido';
+    const buffers = breathingBuffersRef.current;
+    let buffer = buffers.get(nodeId);
+    if (!buffer) {
+      buffer = [];
+      buffers.set(nodeId, buffer);
+    }
 
-      ctx.clearRect(0, 0, w, h);
+    buffer.push(frame);
+    const cutoff = nowMsLocal - BREATHING_BUFFER_MAX_MS;
+    while (buffer.length > 0 && buffer[0].timestampMs < cutoff) {
+      buffer.shift();
+    }
 
-      // Fondo del radar táctico
-      ctx.fillStyle = '#090d16';
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      ctx.fill();
+    if (nowMsLocal - lastBreathingAnalysisRef.current >= BREATHING_ANALYSIS_INTERVAL_MS) {
+      lastBreathingAnalysisRef.current = nowMsLocal;
 
-      // Anillos concéntricos de proximidad (0.5m, 1m, 2m, 3m+)
-      ctx.strokeStyle = '#1e293b';
-      ctx.lineWidth = 1.5;
-      [0.25, 0.5, 0.75, 1.0].forEach((ratio, idx) => {
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius * ratio, 0, Math.PI * 2);
-        ctx.stroke();
-
-        // Etiquetas de distancia
-        ctx.fillStyle = '#64748b';
-        ctx.font = '10px monospace';
-        const labels = ['0.5m', '1.0m', '2.0m', '3.0m+'];
-        ctx.fillText(labels[idx], cx + 4, cy - radius * ratio + 12);
-      });
-
-      // Ejes en cruz (N, S, E, O)
-      ctx.beginPath();
-      ctx.moveTo(cx - radius, cy);
-      ctx.lineTo(cx + radius, cy);
-      ctx.moveTo(cx, cy - radius);
-      ctx.lineTo(cx, cy + radius);
-      ctx.stroke();
-
-      // Línea de barrido animado 360°
-      angle = (angle + 0.03) % (Math.PI * 2);
-      const sweepX = cx + Math.cos(angle) * radius;
-      const sweepY = cy + Math.sin(angle) * radius;
-
-      // Abanico difuminado del haz de radar
-      const grad = ctx.createConicGradient(angle - 0.5, cx, cy);
-      grad.addColorStop(0, 'rgba(233, 69, 96, 0.25)');
-      grad.addColorStop(0.1, 'rgba(233, 69, 96, 0.05)');
-      grad.addColorStop(1, 'transparent');
-
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, radius, angle - 0.5, angle);
-      ctx.closePath();
-      ctx.fill();
-
-      // Línea frontal de barrido
-      ctx.strokeStyle = '#e94560';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(sweepX, sweepY);
-      ctx.stroke();
-
-      // Dibuja Blips dinámicos de objetivo si hay movimiento o golpe
-      if (currentMotionProb > 0.2 || isKnockAlert) {
-        const blipDist = radius * (1 - Math.min(1, currentMotionProb * 0.8));
-        const blipAngle = angle - 0.2; // Ligeramente detrás de la línea de barrido
-        const bx = cx + Math.cos(blipAngle) * blipDist;
-        const by = cy + Math.sin(blipAngle) * blipDist;
-
-        // Anillo pulsante alrededor del objetivo
-        ctx.fillStyle = isKnockAlert ? 'rgba(239, 68, 68, 0.8)' : 'rgba(249, 115, 22, 0.8)';
-        ctx.beginPath();
-        ctx.arc(bx, by, isKnockAlert ? 10 : 7, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(bx, by, isKnockAlert ? 16 : 12, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 10px monospace';
-        ctx.fillText(
-          isKnockAlert ? '¡GOLPE!' : `TARGET ${(currentMotionProb * 100).toFixed(0)}%`,
-          bx + 12,
-          by - 4
-        );
+      // Descartar nodos que dejaron de transmitir para no mostrar veredictos viejos.
+      const staleCutoff = nowMsLocal - NODE_ACTIVE_WINDOW_MS;
+      for (const [id, buf] of buffers) {
+        if (buf.length === 0 || buf[buf.length - 1].timestampMs < staleCutoff) {
+          buffers.delete(id);
+        }
       }
 
-      animId = requestAnimationFrame(render);
-    };
-
-    render();
-
-    return () => {
-      cancelAnimationFrame(animId);
-    };
-  }, [currentMotionProb, isKnockAlert]);
+      const results: BreathingByNode[] = [];
+      for (const [id, buf] of buffers) {
+        results.push({ nodeId: id, result: analyzeBreathing(buf) });
+      }
+      results.sort((a, b) => a.nodeId.localeCompare(b.nodeId));
+      setBreathingByNode(results);
+    }
+  }, [rawCsiFrame]);
 
   // Renderizar Espectrograma Waterfall de 64 Subportadoras
   useEffect(() => {
@@ -196,7 +362,6 @@ export function RadarSeeker({
     const h = canvas.height;
     ctx.clearRect(0, 0, w, h);
 
-    const numCols = csiHistory.length;
     const colWidth = Math.max(2, w / 150);
 
     // Dibujar cada columna del historial (de derecha a izquierda)
@@ -232,9 +397,17 @@ export function RadarSeeker({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
         <div>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#f8fafc', letterSpacing: '0.5px' }}>
-            🎯 BUSCADOR TÁCTICO RADAR
+            BUSCADOR TÁCTICO RADAR
           </h2>
           <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{activeZoneName}</span>
+          {' · '}
+          <span
+            data-testid="build-id"
+            title="Versión cargada. Si no coincide con el último despliegue, el service worker está sirviendo caché vieja."
+            style={{ fontSize: '0.7rem', color: '#64748b', fontFamily: 'monospace' }}
+          >
+            build {typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : '?'}
+          </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span
@@ -258,21 +431,158 @@ export function RadarSeeker({
         </div>
       </div>
 
-      {/* Canvas del Barrido Radial RADAR 360° */}
-      <div style={{ display: 'flex', justifyContent: 'center', margin: '12px 0', position: 'relative' }}>
-        <canvas
-          ref={canvasRef}
-          width={320}
-          height={320}
+      {/* Identificador de Nodos ESP Conectados en Zona */}
+      <div style={{ margin: '12px 0', background: '#161b22', padding: '12px 16px', borderRadius: '10px', border: '1px solid #21262d' }}>
+        <div style={{ fontSize: '0.7rem', color: '#8b949e', letterSpacing: '0.5px', marginBottom: '8px', fontWeight: 600 }}>
+          NODOS ESP CONECTADOS EN ZONA ({activeNodes.length})
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+          {activeNodes.length > 0 ? (
+            activeNodes.map((node) => (
+              <div
+                key={node.node_id}
+                style={{
+                  background: '#0d1117',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid #30363d',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '0.75rem',
+                }}
+              >
+                <span style={{ color: '#10b981', fontWeight: 'bold' }}>[ONLINE]</span>
+                <span style={{ fontWeight: 700, color: '#f8fafc' }}>{node.node_id}</span>
+                {/* RSSI crudo en dBm: dato real reportado por el nodo. Nunca se
+                    convierte a metros — ver comentario de cabecera del archivo. */}
+                <span style={{ color: '#8b949e' }}>| {node.rssi ?? '—'} dBm</span>
+                <span
+                  style={{
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    fontSize: '0.65rem',
+                    fontWeight: 800,
+                    background: node.motion > 0.6 ? '#f97316' : node.motion > 0.3 ? '#eab308' : '#10b981',
+                    color: '#000000',
+                    marginLeft: '4px',
+                  }}
+                >
+                  {(node.motion * 100).toFixed(0)}%
+                </span>
+              </div>
+            ))
+          ) : (
+            <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>Esperando reporte de nodos ESP...</span>
+          )}
+        </div>
+      </div>
+
+      {/* Indicador de Tendencia de Proximidad por RSSI */}
+      <div style={{ display: 'flex', justifyContent: 'center', margin: '12px 0' }}>
+        <div
           style={{
-            background: '#090d16',
-            borderRadius: '50%',
-            border: '2px solid #1e293b',
-            boxShadow: '0 0 20px rgba(0,0,0,0.8)',
-            maxWidth: '100%',
-            height: 'auto',
+            background: '#161b22',
+            padding: '20px 28px',
+            borderRadius: '10px',
+            border: '1px solid #21262d',
+            textAlign: 'center',
+            minWidth: '240px',
           }}
-        />
+        >
+          <div style={{ fontSize: '0.7rem', color: '#8b949e', letterSpacing: '0.5px', marginBottom: '8px' }}>
+            SEÑAL RSSI (NODOS CONECTADOS: {activeNodes.length})
+          </div>
+          <div data-testid="rssi-trend-value" style={{ fontSize: '2rem', fontWeight: 800, color: '#f8fafc' }}>
+            {proximity.currentRssi !== null ? `${proximity.currentRssi} dBm` : '—'}
+          </div>
+          <div
+            style={{
+              marginTop: '10px',
+              display: 'inline-block',
+              padding: '4px 14px',
+              borderRadius: '6px',
+              fontSize: '0.8rem',
+              fontWeight: 800,
+              color: proximityDisplay.color,
+              border: `1px solid ${proximityDisplay.color}`,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}
+          >
+            {proximityDisplay.label}
+          </div>
+        </div>
+      </div>
+
+      {/* Detección de Patrón Respiratorio por CSI (reemplaza el panel de
+          "triangulación" fabricado — ver comentario de cabecera del archivo) */}
+      <div style={{ margin: '12px 0', background: '#161b22', padding: '14px', borderRadius: '10px', border: '1px solid #21262d' }}>
+        <div style={{ fontSize: '0.7rem', color: '#8b949e', letterSpacing: '0.5px', marginBottom: '10px', fontWeight: 600 }}>
+          DETECCIÓN DE PATRÓN RESPIRATORIO (CSI)
+        </div>
+
+        {breathingByNode.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '6px' }}>
+            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#8b949e' }}>
+              SIN TRAMAS CSI
+            </div>
+          </div>
+        )}
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: breathingByNode.length > 1 ? '1fr 1fr' : '1fr',
+            gap: '8px',
+          }}
+        >
+          {breathingByNode.map(({ nodeId, result }) => (
+            <div
+              key={nodeId}
+              data-testid={`breathing-${nodeId}`}
+              style={{
+                background: '#0d1117',
+                padding: '10px',
+                borderRadius: '6px',
+                border: '1px solid #30363d',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '4px' }}>{nodeId}</div>
+
+              {result.status === 'insufficient_data' && (
+                <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#eab308' }}>
+                  ACUMULANDO DATOS… {Math.round(result.windowSeconds)} s
+                </div>
+              )}
+
+              {result.status === 'detected' && (
+                <>
+                  <div style={{ fontSize: '1rem', fontWeight: 800, color: '#10b981' }}>
+                    PATRÓN RESPIRATORIO DETECTADO
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#f8fafc', marginTop: '4px' }}>
+                    {result.bpm !== null ? `${result.bpm.toFixed(1)} resp/min` : '—'}
+                    {' · '}
+                    Confianza: {(result.confidence * 100).toFixed(0)}%
+                  </div>
+                </>
+              )}
+
+              {result.status === 'not_detected' && (
+                <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#8b949e' }}>
+                  SIN PATRÓN RESPIRATORIO
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: '8px', fontSize: '0.65rem', color: '#64748b', lineHeight: 1.4, textAlign: 'center' }}>
+          Requiere zona en silencio y sin movimiento durante ~1 minuto: el movimiento del propio rescatista enmascara la señal de respiración.
+          &quot;Sin patrón&quot; no significa &quot;no hay nadie&quot;, sino que no se pudo confirmar con esta muestra.
+        </div>
       </div>
 
       {/* Métricas de Señal en Tiempo Real */}
@@ -284,11 +594,46 @@ export function RadarSeeker({
           </div>
         </div>
 
-        <div style={{ background: '#161b22', padding: '8px 12px', borderRadius: '8px', border: '1px solid #21262d', textAlign: 'center' }}>
-          <div style={{ fontSize: '0.65rem', color: '#8b949e' }}>ACÚSTICA (GOLPE)</div>
-          <div style={{ fontSize: '1.2rem', fontWeight: 800, color: isKnockAlert ? '#ef4444' : '#10b981' }}>
-            {isKnockAlert ? 'ALERTA' : '0%'}
-          </div>
+        <div style={{ background: '#161b22', padding: '8px 12px', borderRadius: '8px', border: '1px solid #21262d', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{ fontSize: '0.65rem', color: '#8b949e', marginBottom: '2px' }}>ACÚSTICA (GOLPE)</div>
+          {startError ? (
+            <div style={{ fontSize: '0.6rem', color: '#ef4444', fontWeight: 700, marginTop: '2px' }}>
+              {startError}
+            </div>
+          ) : !isAudioListening ? (
+            <button
+              type="button"
+              onClick={onToggleAudio}
+              style={{
+                marginTop: '2px',
+                background: '#2563eb',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '4px',
+                padding: '3px 8px',
+                fontSize: '0.65rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              ACTIVAR MICRO
+            </button>
+          ) : (
+            <>
+              <div style={{ fontSize: '1.2rem', fontWeight: 800, color: isKnockAlert ? '#ef4444' : '#10b981' }}>
+                {isKnockAlert ? 'ALERTA' : `${(rmsLevel * 100).toFixed(0)}%`}
+              </div>
+              {directionAngle !== null && directionAngle !== undefined && (
+                <div style={{ fontSize: '0.6rem', color: '#38bdf8', fontWeight: 700, marginTop: '2px' }}>
+                  {directionAngle < -5
+                    ? `${Math.abs(directionAngle).toFixed(0)}° IZQ`
+                    : directionAngle > 5
+                    ? `${directionAngle.toFixed(0)}° DER`
+                    : '0° FRENTE'}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <div style={{ background: '#161b22', padding: '8px 12px', borderRadius: '8px', border: '1px solid #21262d', textAlign: 'center' }}>

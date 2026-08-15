@@ -29,6 +29,13 @@ const wsRelayProxy = {
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    // Sello de build visible en la UI: permite confirmar qué versión corre
+    // realmente el dispositivo cuando el service worker sirve caché vieja.
+    __BUILD_ID__: JSON.stringify(
+      new Date().toISOString().slice(5, 16).replace('T', ' '),
+    ),
+  },
   plugins: [
     react(),
     VitePWA({

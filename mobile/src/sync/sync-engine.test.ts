@@ -214,6 +214,23 @@ describe('SyncEngine', () => {
 
       expect(engine.getAlerts()[0].zone_id).toBe('zone-X');
     });
+
+    it('debe extraer rssi del payload cuando está presente', () => {
+      const ws = MockWebSocket.getLastInstance()!;
+      ws.simulateMessage(JSON.stringify({
+        type: 'cali/zone/zone-Y/csi',
+        payload: { zone_id: 'zone-Y', motion_probability: 0.6, node_id: 'n1', timestamp: '2024-01-01T00:00:00Z', rssi: -58 },
+      }));
+
+      expect(engine.getAlerts()[0].rssi).toBe(-58);
+    });
+
+    it('debe dejar rssi undefined cuando el payload no lo incluye', () => {
+      const ws = MockWebSocket.getLastInstance()!;
+      ws.simulateMessage(createCsiMessage('zone-Z', 0.4));
+
+      expect(engine.getAlerts()[0].rssi).toBeUndefined();
+    });
   });
 
   describe('Reintentos de conexión (Req 8.3)', () => {
@@ -485,6 +502,7 @@ describe('SyncEngine — Property-Based Tests', () => {
               zone_id: input.zone_id,
               motion_probability: input.motion_probability,
               timestamp,
+              receivedAt: Date.now(),
             });
           }
 

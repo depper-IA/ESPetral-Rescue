@@ -1,0 +1,6 @@
+{
+  "version": "0.1.0-test",
+  "binary_url": "https://example.invalid/firmware/firmware-0.1.0-test.bin",
+  "binary_size": 22,
+  "sha256": "57345a9fb7cedfdb949fde9b204e1e6c3c5e1aad0726c156053e3790955054c6"
+}

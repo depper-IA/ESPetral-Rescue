@@ -1,0 +1,33 @@
+# Name,   Type, SubType, Offset,   Size,     Flags
+#
+# Tabla de particiones para placas ESP32-S3 de 16MB (medido con
+# `esptool flash_id` → Device 4018, 8MB PSRAM: variante N16R8).
+#
+# Se usa SOLO en el target esp32s3, vía
+# CONFIG_PARTITION_TABLE_CUSTOM_FILENAME en sdkconfig.defaults.esp32s3.
+# Los targets C3/C6 siguen usando partitions.csv (dimensionada a 4MB),
+# porque las Super Mini de esos chips traen 4MB físicos y configurar un
+# flash mayor al real rompe el arranque.
+#
+# otadata es OBLIGATORIA para OTA: esp_ota_set_boot_partition() (ver
+# ota_update.c) la usa para persistir qué slot debe arrancar el
+# bootloader tras una actualización.
+#
+# Sin partición 'factory': layout dual-OTA estándar de ESP-IDF. Con
+# otadata vacía el bootloader arranca ota_0, así que 'factory' sería
+# espacio desperdiciado.
+#
+# Dimensionamiento: 4MB por slot OTA contra un binario medido de ~1MB
+# deja ~75% libre, headroom de sobra para crecimiento del procesamiento
+# CSI. Quedan ~7.8MB sin asignar al final de la flash; se pueden dedicar
+# a una partición de almacenamiento (p. ej. buffer de lecturas CSI en
+# disco para operación offline prolongada) SIN mover las particiones
+# existentes, porque se agregaría después de ota_1.
+#
+# Total asignado: 0x820000 (8.13MB) de 0x1000000 (16MB).
+# Particiones app alineadas a 0x10000, otadata alineada a 0x2000.
+nvs,      data, nvs,     0x9000,   0x6000,
+otadata,  data, ota,     0xf000,   0x2000,
+phy_init, data, phy,     0x11000,  0x1000,
+ota_0,    app,  ota_0,   0x20000,  0x400000,
+ota_1,    app,  ota_1,   0x420000, 0x400000,

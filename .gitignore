@@ -11,6 +11,8 @@
 .copilot/
 .aider*
 .atl/
+.impeccable/
+.opencode/
 CLAUDE.md
 COPILOT.md
 GEMINI.md
@@ -42,8 +44,15 @@ backend/data/
 Thumbs.db
 desktop.ini
 
-# ESP-IDF firmware (excluido para mantenerse privado)
-firmware/
+# ESP-IDF firmware build artifacts
+firmware/build/
+firmware/**/build/
+firmware/sdkconfig
+firmware/**/sdkconfig
+firmware/sdkconfig.old
+firmware/**/sdkconfig.old
+firmware/*.bin
+firmware/**/*.bin
 
 # AI agent context and project internal rules (local-only)
 .kiro/

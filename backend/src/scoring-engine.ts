@@ -238,22 +238,72 @@ export class ScoringEngine {
   ): Partial<Record<'csi' | 'acoustic' | 'gps', SourceData>> {
     const sources: Partial<Record<'csi' | 'acoustic' | 'gps', SourceData>> = {};
 
-    // --- CSI: último motion_probability para la zona ---
-    const csiRow = this.db
+    // --- CSI: consenso espacial multi-nodo para la zona ---
+    const csiRows = this.db
       .prepare(
-        `SELECT motion_probability, received_at
+        `SELECT node_id, motion_probability, received_at
          FROM csi_readings
          WHERE zone_id = ?
-         ORDER BY received_at DESC
-         LIMIT 1`
+           AND received_at >= datetime('now', '-30 seconds')
+         ORDER BY received_at DESC`
       )
-      .get(zoneId) as { motion_probability: number; received_at: string } | undefined;
+      .all(zoneId) as Array<{ node_id: string; motion_probability: number; received_at: string }>;
 
-    if (csiRow) {
+    if (csiRows.length > 0) {
+      // Tomar la lectura más reciente de cada nodo activo en los últimos 30s
+      const nodeLatestMap = new Map<string, { motion_probability: number; received_at: string }>();
+      for (const row of csiRows) {
+        if (!nodeLatestMap.has(row.node_id)) {
+          nodeLatestMap.set(row.node_id, {
+            motion_probability: row.motion_probability,
+            received_at: row.received_at,
+          });
+        }
+      }
+
+      const nodeReadings = Array.from(nodeLatestMap.values());
+      let csiValue = 0;
+      let newestReportDate = new Date(0);
+
+      if (nodeReadings.length === 1) {
+        csiValue = nodeReadings[0].motion_probability;
+        newestReportDate = new Date(nodeReadings[0].received_at.replace(' ', 'T') + 'Z');
+      } else if (nodeReadings.length > 1) {
+        // Consenso espacial multi-nodo (Media Geométrica):
+        // Exige co-detección entre nodos de la misma zona para filtrar falsos positivos de un solo sensor
+        let prod = 1.0;
+        for (const nr of nodeReadings) {
+          prod *= nr.motion_probability;
+          const reportDate = new Date(nr.received_at.replace(' ', 'T') + 'Z');
+          if (reportDate > newestReportDate) {
+            newestReportDate = reportDate;
+          }
+        }
+        csiValue = Math.pow(prod, 1 / nodeReadings.length);
+      }
+
       sources.csi = {
-        value: csiRow.motion_probability,
-        lastReport: new Date(csiRow.received_at.replace(' ', 'T') + 'Z'),
+        value: csiValue,
+        lastReport: newestReportDate,
       };
+    } else {
+      // Fallback a última lectura histórica si no hay datos en los últimos 30s
+      const fallbackRow = this.db
+        .prepare(
+          `SELECT motion_probability, received_at
+           FROM csi_readings
+           WHERE zone_id = ?
+           ORDER BY received_at DESC
+           LIMIT 1`
+        )
+        .get(zoneId) as { motion_probability: number; received_at: string } | undefined;
+
+      if (fallbackRow) {
+        sources.csi = {
+          value: fallbackRow.motion_probability,
+          lastReport: new Date(fallbackRow.received_at.replace(' ', 'T') + 'Z'),
+        };
+      }
     }
 
     // --- Acoustic: último reporte con confidence para la zona ---

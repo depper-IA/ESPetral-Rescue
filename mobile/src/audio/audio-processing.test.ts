@@ -9,6 +9,7 @@ import * as fc from 'fast-check';
 import {
   classifyPeak,
   computeRms,
+  estimateStereoDoa,
   INITIAL_NOISE_FLOOR,
   NOISE_FLOOR_ALPHA,
   PEAK_ABSOLUTE_THRESHOLD,
@@ -190,5 +191,32 @@ describe('Property 3: Noise floor tracking and peak classification', () => {
       ),
       { numRuns: 200 },
     );
+  });
+});
+
+describe('estimateStereoDoa', () => {
+  it('retorna ángulo 0° cuando ambos canales están perfectamente alineados (sonido frontal)', () => {
+    const left = new Float32Array([0, 0.5, 1, 0.5, 0, -0.5, -1, 0]);
+    const right = new Float32Array([0, 0.5, 1, 0.5, 0, -0.5, -1, 0]);
+
+    const result = estimateStereoDoa(left, right, 44100, 0.025);
+    expect(result.angleDegrees).toBeCloseTo(0, 1);
+    expect(result.confidence).toBeGreaterThan(0.9);
+  });
+
+  it('retorna ángulo negativo cuando el canal izquierdo recibe primero el impulso (fuente a la izquierda)', () => {
+    const left = new Float32Array([1, 0.5, 0, 0, 0, 0, 0, 0]);
+    const right = new Float32Array([0, 0, 1, 0.5, 0, 0, 0, 0]);
+
+    const result = estimateStereoDoa(left, right, 44100, 0.025);
+    expect(result.angleDegrees).toBeLessThan(0);
+  });
+
+  it('retorna ángulo positivo cuando el canal derecho recibe primero el impulso (fuente a la derecha)', () => {
+    const left = new Float32Array([0, 0, 1, 0.5, 0, 0, 0, 0]);
+    const right = new Float32Array([1, 0.5, 0, 0, 0, 0, 0, 0]);
+
+    const result = estimateStereoDoa(left, right, 44100, 0.025);
+    expect(result.angleDegrees).toBeGreaterThan(0);
   });
 });

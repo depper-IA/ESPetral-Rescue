@@ -1,0 +1,27 @@
+menu "CALI CSI Node Configuration"
+
+    config CALI_LED_GPIO
+        int "GPIO pin for onboard LED indicator"
+        range 0 48
+        default 8
+        help
+            GPIO number used for the LED indicator.
+
+            Default explícito de este symbol: 8 (compatible con C3/C6
+            Super Mini). Se usa SOLO si ningún sdkconfig.defaults.<target>
+            lo sobreescribe — nunca debería quedar vacío en un build real.
+
+            Defaults por chip (definidos en sdkconfig.defaults.<target>,
+            tienen prioridad sobre el default de este symbol):
+              ESP32-C3 (DevKitM-1 / Super Mini): 8
+              ESP32-C6 (Super Mini):            8
+              ESP32-S3 (Zero / Super Mini):     21
+              ESP32-S3 (DevKitC-1 RGB):         48 (requiere driver WS2812)
+
+            Si tu placa difiere del default del chip, ajustá este valor
+            vía `idf.py menuconfig` o `idf.py -DCONFIG_CALI_LED_GPIO=N build`.
+
+            Cambiar este valor NO afecta la lógica de detección CSI —
+            solo cambia qué GPIO se activa como indicador visual.
+
+endmenu

@@ -184,6 +184,54 @@ describe('validateCsiPayload', () => {
     }));
     expect(validateCsiPayload(payload)).not.toBeNull();
   });
+
+  it('acepta rssi válido y lo incluye en el resultado', () => {
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      timestamp: '2024-01-15T10:30:00Z',
+      motion_probability: 0.5,
+      node_id: 'node-01',
+      rssi: -62,
+    });
+    const result = validateCsiPayload(payload);
+    expect(result).not.toBeNull();
+    expect(result!.rssi).toBe(-62);
+  });
+
+  it('rechaza el mensaje completo cuando rssi es un string', () => {
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      timestamp: '2024-01-15T10:30:00Z',
+      motion_probability: 0.5,
+      node_id: 'node-01',
+      rssi: '-62',
+    });
+    expect(validateCsiPayload(payload)).toBeNull();
+  });
+
+  it('rechaza el mensaje completo cuando rssi es null', () => {
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      timestamp: '2024-01-15T10:30:00Z',
+      motion_probability: 0.5,
+      node_id: 'node-01',
+      rssi: null,
+    });
+    expect(validateCsiPayload(payload)).toBeNull();
+  });
+
+  it('acepta el mensaje cuando rssi está ausente (compatibilidad hacia atrás)', () => {
+    const payload = JSON.stringify({
+      zone_id: 'zone-a',
+      timestamp: '2024-01-15T10:30:00Z',
+      motion_probability: 0.5,
+      node_id: 'node-01',
+    });
+    const result = validateCsiPayload(payload);
+    expect(result).not.toBeNull();
+    expect(result!.rssi).toBeUndefined();
+    expect('rssi' in (result as object)).toBe(false);
+  });
 });
 
 // --- Tests de validación de payload CSI raw (64 amplitudes de subportadora) ---

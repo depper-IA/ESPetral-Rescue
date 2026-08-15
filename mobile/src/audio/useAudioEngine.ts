@@ -8,6 +8,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   classifyPeak,
   computeRms,
+  computeRmsPercentage,
+  estimateStereoDoa,
   INITIAL_NOISE_FLOOR,
   NOISE_FLOOR_ALPHA,
   PEAK_ABSOLUTE_THRESHOLD,
@@ -46,6 +48,10 @@ export interface AudioEngineState {
   currentThreshold: number;
   /** Total de picos detectados desde que se inició la escucha */
   peaksDetected: number;
+  /** Ángulo estimado de dirección de arribo en grados (-90° Izq a +90° Der), null si es mono */
+  directionAngle: number | null;
+  /** Confianza de la estimación de dirección (0.0 a 1.0) */
+  directionConfidence: number;
 }
 
 export interface AudioEngineControls {
@@ -80,12 +86,16 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
     currentCentroid: null,
     currentThreshold: initialThreshold(),
     peaksDetected: 0,
+    directionAngle: null,
+    directionConfidence: 0,
   });
 
   // Referencias internas para el pipeline de audio
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const leftAnalyserRef = useRef<AnalyserNode | null>(null);
+  const rightAnalyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const noiseFloorRef = useRef<number>(INITIAL_NOISE_FLOOR);
   const isListeningRef = useRef<boolean>(false);
@@ -134,15 +144,39 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
       peaksDetectedRef.current += 1;
     }
 
+    // Estimar dirección de arribo estéreo (DoA) si hay 2 canales
+    let directionAngle: number | null = null;
+    let directionConfidence = 0;
+
+    if (leftAnalyserRef.current && rightAnalyserRef.current) {
+      const leftTimeData = new Float32Array(leftAnalyserRef.current.fftSize);
+      const rightTimeData = new Float32Array(rightAnalyserRef.current.fftSize);
+      leftAnalyserRef.current.getFloatTimeDomainData(leftTimeData);
+      rightAnalyserRef.current.getFloatTimeDomainData(rightTimeData);
+
+      const doa = estimateStereoDoa(
+        leftTimeData,
+        rightTimeData,
+        audioContextRef.current?.sampleRate ?? 44100,
+        0.025, // Distancia entre cápsulas estéreo (Boya PM700)
+      );
+      if (doa.confidence > 0.25) {
+        directionAngle = doa.angleDegrees;
+        directionConfidence = doa.confidence;
+      }
+    }
+
     setState((prev) => ({
       ...prev,
-      rmsLevel: rms,
+      rmsLevel: computeRmsPercentage(rms),
       noiseFloor: newNoiseFloor,
       isPeak,
       lastPeakTimestamp: isPeak ? now : prev.lastPeakTimestamp,
       currentCentroid: centroid,
       currentThreshold: threshold,
       peaksDetected: peaksDetectedRef.current,
+      directionAngle: directionAngle ?? prev.directionAngle,
+      directionConfidence,
     }));
 
     // Notificar picos al callback externo
@@ -157,9 +191,10 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
   const start = useCallback(async () => {
     if (isListeningRef.current) return;
 
-    // Solicitar acceso al micrófono
+    // Solicitar acceso al micrófono (preferir 2 canales estéreo para Boya PM700)
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
+        channelCount: { ideal: 2 },
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
@@ -184,14 +219,32 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0;
 
-    // Conectar pipeline: source → bandpass → analyser
+    // Conectar pipeline principal: source → bandpass → analyser
     source.connect(bandpassFilter);
     bandpassFilter.connect(analyser);
+
+    // Conectar analizadores estéreo para DoA si la fuente tiene 2 canales
+    let leftAnalyser: AnalyserNode | null = null;
+    let rightAnalyser: AnalyserNode | null = null;
+
+    if (source.channelCount >= 2) {
+      const splitter = audioContext.createChannelSplitter(2);
+      leftAnalyser = audioContext.createAnalyser();
+      leftAnalyser.fftSize = 2048;
+      rightAnalyser = audioContext.createAnalyser();
+      rightAnalyser.fftSize = 2048;
+
+      source.connect(splitter);
+      splitter.connect(leftAnalyser, 0);
+      splitter.connect(rightAnalyser, 1);
+    }
 
     // Guardar referencias
     audioContextRef.current = audioContext;
     mediaStreamRef.current = stream;
     analyserRef.current = analyser;
+    leftAnalyserRef.current = leftAnalyser;
+    rightAnalyserRef.current = rightAnalyser;
     isListeningRef.current = true;
     noiseFloorRef.current = INITIAL_NOISE_FLOOR;
     peaksDetectedRef.current = 0;
@@ -207,6 +260,8 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
       currentCentroid: null,
       currentThreshold: initialThreshold(),
       peaksDetected: 0,
+      directionAngle: null,
+      directionConfidence: 0,
     });
 
     // Iniciar loop de procesamiento
@@ -232,6 +287,8 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
     }
 
     analyserRef.current = null;
+    leftAnalyserRef.current = null;
+    rightAnalyserRef.current = null;
     peaksDetectedRef.current = 0;
 
     setState({
@@ -245,6 +302,8 @@ export function useAudioEngine(): [AudioEngineState, AudioEngineControls] {
       currentCentroid: null,
       currentThreshold: initialThreshold(),
       peaksDetected: 0,
+      directionAngle: null,
+      directionConfidence: 0,
     });
   }, []);
 

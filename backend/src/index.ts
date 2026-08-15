@@ -67,7 +67,7 @@ async function main() {
       const payload = validateCsiPayload(packet.payload);
       if (payload) {
         // Reenviar al dashboard dentro de 1 segundo (inmediato), incluir node_id
-        server.broadcastCsiUpdate(payload.zone_id, payload.motion_probability, payload.node_id);
+        server.broadcastCsiUpdate(payload.zone_id, payload.motion_probability, payload.node_id, payload.rssi);
 
         // Persistir lectura CSI y recalcular puntuación
         try {

@@ -1,0 +1,21 @@
+# CALI CSI Node - Defaults específicos para ESP32-C3
+# Aplicado DESPUÉS de sdkconfig.defaults cuando se compila con
+#   idf.py set-target esp32c3
+# Documentación: docs espressif "target-dependent sdkconfig defaults"
+#
+# Chips ESP32-C3 relevantes:
+#   - ESP32-C3-DevKitM-1:        LED onboard GPIO 8
+#   - ESP32-C3-DevKitC-02:       sin LED onboard (externo)
+#   - ESP32-C3-MINI-1 / Super Mini: sin LED onboard (externo)
+
+# GPIO del LED onboard (compatible con DevKitM-1)
+CONFIG_CALI_LED_GPIO=8
+
+# CPU freq por defecto del C3 (160 MHz máximo, configuramos 160 para CSI)
+CONFIG_ESP32C3_DEFAULT_CPU_FREQ_160=y
+
+# Crystal frequency (C3 típico: 40MHz)
+CONFIG_XTAL_FREQ_40=y
+
+# Wi-Fi country code (importante para validación regulatoria)
+CONFIG_WIFI_COUNTRY_CODE="01"

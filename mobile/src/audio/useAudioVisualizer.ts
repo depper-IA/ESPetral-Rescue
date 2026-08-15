@@ -87,18 +87,26 @@ export function useAudioVisualizer(
 
       analyserNode!.getFloatTimeDomainData(timeBuffer);
 
-      // Línea verde centrada verticalmente: y = ((sample + 1) / 2) * height
+      const sampleCount = timeBuffer.length;
+      if (sampleCount === 0) return;
+
+      // Ganancia de amplificación dinámica visual para evitar líneas planas en audio de baja entrada
+      let maxAmp = 0.005;
+      for (let i = 0; i < sampleCount; i++) {
+        const absVal = Math.abs(timeBuffer[i]);
+        if (absVal > maxAmp) maxAmp = absVal;
+      }
+      const gain = Math.min(30, Math.max(4, 0.6 / maxAmp));
+
+      // Línea verde centrada verticalmente
       waveformCtx!.strokeStyle = '#4caf50';
       waveformCtx!.lineWidth = 1.5;
       waveformCtx!.beginPath();
 
-      const sampleCount = timeBuffer.length;
-      if (sampleCount === 0) return;
-
       const sliceWidth = width / sampleCount;
       let x = 0;
       for (let i = 0; i < sampleCount; i++) {
-        const sample = timeBuffer[i];
+        const sample = Math.max(-1, Math.min(1, timeBuffer[i] * gain));
         const y = ((sample + 1) / 2) * height;
         if (i === 0) {
           waveformCtx!.moveTo(x, y);
@@ -123,9 +131,9 @@ export function useAudioVisualizer(
       if (numBins === 0) return;
 
       const barWidth = width / numBins;
-      // getFloatFrequencyData devuelve dB en [-100, 0]; mapeamos [-100,-10] → [0,1].
-      const minDb = -100;
-      const maxDb = -10;
+      // getFloatFrequencyData devuelve dB en [-100, 0]; mapeamos [-90, -20] → [0, 1] para mayor sensibilidad visual
+      const minDb = -90;
+      const maxDb = -20;
       const dbRange = maxDb - minDb;
 
       for (let i = 0; i < numBins; i++) {

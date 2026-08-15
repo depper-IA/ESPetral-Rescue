@@ -105,11 +105,20 @@ export function validateCsiPayload(payload: string | Buffer): CsiTelemetryMessag
     return null;
   }
 
+  // Validar campo opcional rssi: si está presente, debe ser un número finito.
+  // Ausente es válido (compatibilidad con nodos que aún no lo envían), pero
+  // presente-e-inválido rechaza el mensaje completo, igual que los demás campos.
+  const hasRssi = Object.prototype.hasOwnProperty.call(msg, 'rssi') && msg.rssi !== undefined;
+  if (hasRssi && (typeof msg.rssi !== 'number' || !Number.isFinite(msg.rssi))) {
+    return null;
+  }
+
   return {
     zone_id: msg.zone_id,
     node_id: msg.node_id,
     timestamp: msg.timestamp,
     motion_probability: msg.motion_probability,
+    ...(hasRssi && { rssi: msg.rssi as number }),
   };
 }
 

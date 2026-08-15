@@ -55,16 +55,21 @@ const SYNC_BAR_OFFSET_PX = 56;
  */
 const ALERT_BANNER_OFFSET_PX = 108;
 
-/** URL del backend WebSocket relay. Configurable vía env en build. */
+/**
+ * URL del backend WebSocket relay. Configurable vía env en build
+ * (VITE_BACKEND_WS_URL) para casos que lo requieran explícitamente; por
+ * defecto se deriva del host con el que se cargó la página, para que la
+ * PWA siga funcionando sin rebuild cuando cambia la red de despliegue
+ * (WiFi externo, hotspot, o el propio ESP32 en modo SoftAP).
+ */
 function resolveBackendWsUrl(): string {
-  // En Vite, import.meta.env.VITE_BACKEND_WS_URL permite override en build
   const fromEnv = (import.meta as { env?: { VITE_BACKEND_WS_URL?: string } }).env?.VITE_BACKEND_WS_URL;
   if (fromEnv && typeof fromEnv === 'string') {
     return fromEnv;
   }
-  // Fallback razonable para dev local
-  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
-    return 'wss://localhost:9001';
+  if (typeof window !== 'undefined' && window.location.hostname) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.hostname}:9001`;
   }
   return 'ws://localhost:9001';
 }
@@ -502,7 +507,7 @@ export function App(): ReactNode {
             gap: '2px',
           }}
         >
-          <span>🎯 RADAR</span>
+          <span>RADAR</span>
         </button>
 
         <button
@@ -525,7 +530,7 @@ export function App(): ReactNode {
             gap: '2px',
           }}
         >
-          <span>🎤 GOLPES</span>
+          <span>GOLPES</span>
         </button>
 
         <button
@@ -548,7 +553,7 @@ export function App(): ReactNode {
             gap: '2px',
           }}
         >
-          <span>🗺️ MAPA</span>
+          <span>MAPA</span>
         </button>
 
         <button
@@ -571,7 +576,7 @@ export function App(): ReactNode {
             gap: '2px',
           }}
         >
-          <span>📍 GPS</span>
+          <span>GPS</span>
         </button>
       </nav>
 
@@ -583,6 +588,11 @@ export function App(): ReactNode {
             rawCsiFrame={rawCsiFrame}
             knockState={knockState}
             isConnected={syncState === 'connected'}
+            isAudioListening={audioState.isListening}
+            onToggleAudio={handleToggleAudio}
+            rmsLevel={audioState.rmsLevel}
+            startError={audioStartError}
+            directionAngle={audioState.directionAngle}
           />
         )}
 

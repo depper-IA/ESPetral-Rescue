@@ -15,10 +15,23 @@
 export interface ZoneAlert {
   /** Identificador de la zona */
   zone_id: string;
+  /** Identificador del nodo ESP32 emisor (opcional) */
+  node_id?: string;
   /** Probabilidad de movimiento (0.0–1.0) */
   motion_probability: number;
   /** Timestamp ISO 8601 de la lectura */
   timestamp: string;
+  /** RSSI crudo del hardware ESP32 (dBm), opcional — ausente en nodos que aún no lo envían */
+  rssi?: number;
+  /**
+   * Momento de recepción en el cliente (`Date.now()`).
+   *
+   * El campo `timestamp` NO sirve para medir antigüedad: el ESP32 no tiene
+   * RTC ni NTP, así que envía su tiempo desde el arranque (se observan
+   * valores como "1970-01-01T00:00:52Z"). Para decidir si un nodo sigue
+   * activo hay que usar la hora de llegada medida localmente.
+   */
+  receivedAt: number;
 }
 
 /** Mensaje entrante del relay WebSocket */
@@ -318,12 +331,22 @@ export class SyncEngine {
       zone_id: typeof payload.zone_id === 'string'
         ? payload.zone_id
         : this.extractZoneIdFromTopic(message.type),
+      /*
+       * Sin fallback inventado: un mensaje sin node_id deja el campo
+       * indefinido y la UI lo trata como nodo desconocido. Asignarle un ID
+       * ficticio haría aparecer un nodo que no existe en la lista de
+       * cobertura, y en campo eso se lee como "hay un sensor cubriendo esa
+       * zona" cuando no lo hay.
+       */
+      ...(typeof payload.node_id === 'string' && { node_id: payload.node_id }),
       motion_probability: typeof payload.motion_probability === 'number'
         ? payload.motion_probability
         : 0,
       timestamp: typeof payload.timestamp === 'string'
         ? payload.timestamp
         : new Date().toISOString(),
+      ...(typeof payload.rssi === 'number' && { rssi: payload.rssi }),
+      receivedAt: Date.now(),
     };
 
     this.addAlert(alert);

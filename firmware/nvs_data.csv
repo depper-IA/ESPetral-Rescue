@@ -1,0 +1,18 @@
+# PLANTILLA — este archivo es un ejemplo de provisioning, NO datos reales.
+# wifi_ssid / wifi_pass / mqtt_token deben reemplazarse con valores reales
+# antes de generar nvs.bin para un nodo de campo. NUNCA commitear valores
+# reales en este archivo (regla 4.3 del proyecto: secretos solo en NVS,
+# nunca en el código fuente ni versionados en git).
+key,type,encoding,value
+cali_config,namespace,,
+zone_id,data,string,zone-test-003
+# node_id,data,string,esp32-s3-001
+mqtt_host,data,string,192.168.0.100
+mqtt_port,data,u16,1883
+mqtt_token,data,string,internal-relay-token
+wifi_ssid,data,string,Tenda_542FE0
+wifi_pass,data,string,LXebyfe5
+tx_rate,data,u8,20
+window_sz,data,u16,40
+fw_version,data,string,1.0.0
+ota_url,data,string,

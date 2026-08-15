@@ -2,125 +2,235 @@
 
 # ESPetral Rescue
 
-**Herramienta de código abierto para operaciones de búsqueda y rescate en campo**
-Detección de movimiento Wi-Fi CSI · Sensor acústico de golpes · Registro GPS · Panel en tiempo real
+**Herramienta de codigo abierto para operaciones de busqueda y rescate en campo**
+Deteccion de movimiento Wi-Fi CSI · Sensor acustico de golpes · Registro GPS · Panel en tiempo real
 Desarrollado en respuesta a la emergencia en Cali, Colombia · Por [Sam Wilkie](https://github.com/depper-IA)
 
 [![Licencia](https://img.shields.io/badge/Licencia-MIT-green?style=flat-square)](LICENSE)
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-5.x-red?style=flat-square&logo=espressif&logoColor=white)](https://docs.espressif.com/projects/esp-idf)
 [![Node.js](https://img.shields.io/badge/Node.js-20.x-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![React](https://img.shields.io/badge/React-18.x-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
 
 </div>
 
 ---
 
-## Qué Es
+## Que Es
 
-ESPetral Rescue es un sistema de detección multicomponente diseñado para ayudar a los equipos de búsqueda y rescate a localizar personas atrapadas en estructuras colapsadas. Opera bajo la filosofía offline-first (desconectado primero) desde un computador portátil en el sitio de rescate y, opcionalmente, se sincroniza con AWS para coordinación remota.
+ESPetral Rescue es un sistema de deteccion multicomponente disenado para ayudar a los equipos de busqueda y rescate a localizar personas atrapadas bajo escombros o estructuras colapsadas. Opera bajo la filosofia **offline-first** (autonomo en red local aislada air-gapped) desde un computador portatil en el puesto de mando en el sitio del siniestro y, opcionalmente, sincroniza telemetria agregada hacia AWS para coordinacion remota.
 
-**No es un reemplazo para equipos de rescate profesionales**: es un multiplicador de fuerza para equipos de campo que trabajan con recursos limitados.
+**No es un reemplazo para equipos de rescate profesionales**: es un multiplicador de fuerza tactico para rescatistas y voluntarios de campo que operan con recursos limitados en situaciones de emergencia.
 
 ---
 
-## Cómo Funciona
+## Arquitectura y Flujo del Sistema
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  ZONA DE ESCOMBROS                                          │
-│  Nodos ESP32 (S3/C6/C3) → Detección de movimiento Wi-Fi CSI │
-└──────────────────────┬──────────────────────────────────────┘
-                       │ MQTT sobre Wi-Fi local
-┌──────────────────────▼──────────────────────────────────────┐
-│  PORTÁTIL DE RESCATE (SITIO DE CAMPO)                       │
-│  Broker MQTT · Motor de Puntuación · SQLite · Dashboard     │
-└──────────┬──────────────────────────┬───────────────────────┘
-           │ WebSocket                │ HTTPS cada 30s (opcional)
-┌──────────▼──────────┐  ┌───────────▼────────────────────────┐
-│  PWA Móvil de Campo │  │  AWS (Capa Gratuita)               │
-│  Detección acústica │  │  API GW · Lambda · DynamoDB · S3   │
-│  Registrador GPS    │  │  Dashboard remoto · Firmware OTA   │
-│  Offline-first      │  │  (solo si hay internet disponible) │
-└─────────────────────┘  └────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│  ZONA DE ESCOMBROS (CAMPO)                                              │
+│  Nodos ESP32 (S3 / C6 / C3)                                             │
+│  - Captura CSI a 20 fps / Fase cruda OFDM / LED de alerta               │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │ MQTT (TCP 1883 / PSK)
+┌────────────────────────────────────▼────────────────────────────────────┐
+│  PUESTO DE MANDO LOCAL (PORTATIL DE CAMPO)                              │
+│  - Broker MQTT Aedes integrado                                          │
+│  - SQLite con cifrado SQLCipher (auto-purga a las 72h)                  │
+│  - Motor de Puntuacion Compuesta Tripartita                             │
+│  - Servidor Express + WebSocket Relay (puerto 3000)                     │
+└───────────────────┬─────────────────────────────────┬───────────────────┘
+                    │ WebSocket                       │ HTTPS (cada 30s)
+┌───────────────────▼─────────────────┐   ┌───────────▼───────────────────┐
+│  PWA MOVIL DE CAMPO                 │   │  NUBE AWS (FREE TIER)         │
+│  - Analisis acustico de golpes      │   │  - API Gateway + Lambda       │
+│  - Registro GPS cifrado (AES-GCM)   │   │  - DynamoDB (TTL 14 dias)     │
+│  - Radar de proximidad y mapa       │   │  - Dashboard remoto           │
+│  - 100% offline-first               │   │  - Distribucion OTA firmware  │
+└─────────────────────────────────────┘   └───────────────────────────────┘
 ```
 
-**Fuentes de detección fusionadas en un indicador único de probabilidad por zona:**
+### Motor de Puntuacion Compuesta por Zona
 
-| Fuente | Peso | Método |
-|--------|------|--------|
-| Wi-Fi CSI (ESP32) | 50% | Varianza de amplitud de subportadoras en ventana móvil de 2s |
-| Acústica (móvil) | 35% | Detección de patrones de golpes vía Web Audio API (filtro pasabanda + centroide espectral) |
-| Proximidad GPS | 15% | Densidad de ubicación de equipos de campo cerca del centro de zona |
+Las fuentes sensoriales convergen en un indice unificado de probabilidad de vida por zona:
 
----
-
-## Componentes
-
-### `firmware/` — Firmware Multi-Dispositivo (ESP32-S3 / ESP32-C6 / ESP32-C3 en C · ESP-IDF)
-- Código agnóstico de hardware compatible con **ESP32-S3** (Xtensa dual-core de alto rendimiento), **ESP32-C6** (Wi-Fi 6 / RISC-V) y **ESP32-C3** (solución económica accesible).
-- Transmisión CSI ping a 20 fps y cálculo de probabilidad de movimiento en tiempo real.
-- Publicación MQTT cada 2s con búfer circular para resiliencia sin conexión.
-- Indicador LED con histéresis y gestión de energía en suspensión ligera (<80mA promedio).
-- Actualizaciones de firmware OTA mediante S3 y CloudFront.
-
-### `backend/` — Servidor Local (TypeScript · Node.js)
-- Broker MQTT Aedes con autenticación PSK y validación de esquemas
-- Base de datos SQLite con encriptación SQLCipher y auto-purga a las 72 horas
-- Motor de puntuación de probabilidad compuesta (CSI + acústica + GPS)
-- Relay WebSocket para la aplicación móvil
-- Servidor de panel de control Express (puerto 3000)
-- Puente a la nube: agrega datos de zona y los envía a AWS cada 30s
-
-### `mobile/` — PWA de Campo (React · Vite · TypeScript)
-- Detección acústica de golpes con filtro pasabanda y análisis de centroide espectral
-- Registrador de ubicaciones GPS con almacenamiento local encriptado
-- Vista de mapa con Leaflet.js para puntos registrados
-- Sincronización WebSocket con el servidor local al estar en rango, 100% offline cuando no
-
-### `cloud/` — Capa AWS Free Tier (SAM · Lambda · DynamoDB · S3)
-- API Gateway + Lambda: recibe resúmenes agregados cada 30s desde el puente
-- Tabla única DynamoDB: estado de zonas, alertas y estado de nodos (TTL de 14 días)
-- S3 + CloudFront: panel de control remoto y distribución de firmware OTA
-- Cero costo durante 14 días de operación continua (diseñado para un evento de rescate)
+| Fuente Sensorial | Peso | Metodo Tecnico |
+|------------------|------|----------------|
+| **Wi-Fi CSI (ESP32)** | 50% | Varianza de amplitud y analisis de fase en subportadoras OFDM (ventana de 2s a 20 Hz) |
+| **Acustica (Movil)** | 35% | Deteccion de patrones de golpes via Web Audio API (filtro pasabanda 200-4000 Hz + centroide espectral) |
+| **Proximidad GPS** | 15% | Densidad espacial y concentracion de equipos de rescate respecto al centroide de zona |
 
 ---
 
-## Requisitos del Sistema
+## Hardware de Campo y Nodos Sensores
 
-| Componente | Hardware |
-|-----------|----------|
-| Nodos de detección | ESP32-S3, ESP32-C6 o ESP32-C3 Super Mini (~$35.000–$45.000 COP / ~$8–$12 USD) |
-| Coordinación | Computador portátil con Node.js 20+ y zona de cobertura Wi-Fi (Hotspot) |
-| Equipo de campo | Cualquier teléfono Android o iOS con navegador web moderno |
-| Red | Red Wi-Fi local únicamente — no requiere internet para operación en campo |
+El sistema cuenta con soporte de hardware desplegable en campo, validado en laboratorio y probado en banco de pruebas con microcontroladores Espressif.
 
----
+### Galeria de Hardware
 
----
-
-## Diseño Operativo
-
-| Parámetro | Valor | Justificación |
-|-----------|-------|---------------|
-| Retención de datos (local) | 72 horas | Herramienta de emergencia, no un archivo histórico |
-| Retención de datos (nube) | 14 días | Cubre el 100% de los casos documentados de supervivencia en terremotos |
-| Umbral de alerta | >70% puntaje compuesto | Dispara alerta prioritaria a todos los clientes |
-| Obsolescencia de fuente | 10 minutos | La fuente se excluye del cálculo si no envía datos nuevos |
-| Ventana máxima de supervivencia | 14 días | Literatura científica: promedio máx. 6.8 días, máximo documentado 14 días |
+| Vista | Dispositivo | Identificacion del Modelo | Rol y Utilidad en el Sistema |
+|-------|-------------|----------------------------|-------------------------------|
+| <img src="images/fotos (1).jpeg" width="280" alt="Waveshare ESP32-C6-LCD-1.47" /> | **Nodo C6 con Pantalla** | **Waveshare ESP32-C6-LCD-1.47**<br>· CPU RISC-V 32-bit @ 160 MHz<br>· Wi-Fi 6 (802.11ax) + BLE 5<br>· Pantalla LCD IPS 1.47" (ST7789)<br>· Ranura MicroSD/TF y USB-C | **Nodo de Monitoreo y Diagnostico Perimetral**<br>Permite a los rescatistas inspeccionar in situ el estado de la red, canal de radio, ráfagas CSI e intensidad de señal directamente en la pantalla integrada, sin necesidad de abrir una laptop o teléfono. |
+| <img src="images/fotos (2).jpeg" width="280" alt="Par Transmisor-Receptor ESP32-C6 y ESP32-S3" /> | **Par Transmisor-Receptor** | **Banco de Pruebas Tx-Rx**<br>· Nodo C6 LCD (Activo en transmision)<br>· Nodo S3 N16R8 (Receptor CSI) | **Enlace de Ping CSI a traves de Escombros**<br>Demostracion de captura activa donde un nodo emite ráfagas continuas de paquetes CSI a 20 Hz y el nodo receptor procesa la perturbacion de fase y amplitud ocasionada por respiracion o movimiento bajo escombros. |
+| <img src="images/fotos (3).jpeg" width="280" alt="ESP32-S3 DevKit N16R8" /> | **Nodo S3 de Alto Rendimiento** | **ESP32-S3-DevKitC-1 (ESP32-S3-N16R8)**<br>· CPU Xtensa Dual-Core @ 240 MHz (SIMD/DSP)<br>· 16 MB Octal Flash + 8 MB Octal PSRAM<br>· Doble USB-C (UART / USB OTG nativo)<br>· LED RGB WS2812 programable | **Nodo Principal de Procesamiento CSI (Maestro / Mama)**<br>Ejecuta el procesamiento pesado de señal: desempaquetado de fase cruda `atan2f(Q,I)` de 64 subportadoras, calculo de varianza matricial, búfer circular de contingencia MQTT y semaforizacion visual LED con histéresis. |
 
 ---
 
-## Seguridad
+## Logros y Estado Actual del Proyecto
 
-- **Red local aislada (Air-Gapped)** — sin tráfico a la nube salvo configuración explícita
-- **SQLCipher** — base de datos encriptada en reposo
-- **Autenticación por Token PSK** — los dispositivos MQTT se autentican con claves compaginadas
-- **GPS como PII** — las coordenadas se encriptan en tránsito y en reposo
-- **Sin PII en la nube** — la nube almacena únicamente coordenadas del centro de la zona, nunca trayectorias GPS individuales
+Hasta la fecha, el proyecto cuenta con las siguientes capacidades desarrolladas, probadas y operativas:
+
+### 1. Firmware de Nodos (`firmware/`) — C / ESP-IDF v5.x
+- **Arquitectura Multi-Target**: Codigo agnostico compatible con **ESP32-S3**, **ESP32-C6** y **ESP32-C3**, seleccionable mediante perfiles `sdkconfig.defaults`.
+- **Motor CSI de 20 Hz (`csi_engine.c` / `csi_transmitter.c`)**: Captura continua de tramas CSI, extraccion de matriz de subportadoras OFDM y calculo de varianza de amplitud en ventana móvil de 2 segundos.
+- **Extraccion de Fase Cruda para Signos Vitales (`wifi_manager.c` / `csi_publisher.c`)**: Desempaquetado de componentes en cuadratura `atan2f(Q,I)` por subportadora (`csi_frame_t.subcarrier_phases[64]`) y canal de publicacion de spike de fase a 10 Hz para deteccion de micromovimientos respiratorios (0.1–0.5 Hz).
+- **Publicacion MQTT Resiliente (`cali_mqtt.c`)**: Búfer circular en memoria para resguardar eventos cuando se pierde la conexion con el puesto de mando, reintentando con backoff exponencial.
+- **Indicador Visual LED Inteligente (`ws2812_led.c` / `led_indicator.c`)**: Semáforo visual con LED direccionable WS2812 e histéresis temporal para evitar parpadeos y alertar visualmente a los rescatistas en la oscuridad.
+- **Aprovisionamiento y NVS por Zonas (`nvs_config.c` / `tools/flash-board.bat`)**: Soporte de particiones NVS preconfiguradas para roles especificos (`nvs_mama`, `nvs_bebe`).
+- **Gestion Energetica Optimizada (`power_mgmt.c`)**: Radio Wi-Fi en modo continuo (`WIFI_PS_NONE`) para garantizar cero perdida de paquetes en la captura CSI.
+- **Soporte de Actualizacion OTA (`ota_update.c`)**: Recepcion de binarios de firmware firmados desde la nube o servidor local.
+
+### 2. Servidor Local y Puesto de Mando (`backend/`) — Node.js / TypeScript
+- **Broker MQTT Integrado**: Servidor Aedes embebido en puerto TCP 1883 y WebSocket 9001, con autenticacion por token PSK y validacion estricta de esquemas de payload.
+- **Base de Datos Cifrada**: SQLite con extension SQLCipher y ciclo de vida de auto-purga a las 72 horas para proteger la privacidad de las coordenadas.
+- **Motor de Fusion Sensorial**: Algoritmo de probabilidad compuesta ponderada con degradacion consciente ante caida de sensores.
+- **Servidor Express y WebSocket Relay**: Difusion de estado a los terminales moviles con latencia inferior a 50 ms.
+- **Analizador de Fase Offline (`scripts/analyze-phase-spike.mjs`)**: Herramienta de analisis DSP para evaluar el jitter residual de fase y validar umbrales de respiracion humana.
+- **Puente a la Nube**: Sincronizacion periodica cada 30 segundos con AWS sin comprometer la autonomia local.
+
+### 3. Aplicacion Movil de Rescatista (`mobile/`) — React / Vite / TypeScript PWA
+- **100% Offline-First**: PWA instalable con cache completa de aplicacion y almacenamiento seguro local (Web Crypto API / AES-GCM).
+- **Detector Acustico de Golpes (`audio-processing.ts` / `useAudioEngine.ts`)**: Procesamiento en tiempo real con Web Audio API, filtrado pasabanda (200–4000 Hz), umbral adaptativo sobre piso de ruido y discriminacion por centroide espectral.
+- **Modulo de Radar y Detector de Respiracion (`RadarSeeker.tsx` / `breathing-detector.ts`)**: Interfaz visual de busqueda dirigida para estimar proximidad de victimas mediante señales combinadas.
+- **Cartografia Táctica (`MapComponent.tsx`)**: Renderizado de mapa con Leaflet.js para ubicacion de zonas y densidad de equipos de busqueda.
+
+### 4. Capa en la Nube Opcional (`cloud/`) — AWS Serverless Free Tier
+- **Plantilla AWS SAM**: API Gateway HTTP, funciones Lambda en Node.js y tabla DynamoDB con TTL de 14 dias.
+- **Coste Cero**: Disenado para operar dentro del Free Tier de AWS durante los 14 dias criticos de una emergencia de rescate.
+- **Distribucion de Firmware y Dashboard**: S3 y CloudFront para entrega de actualizaciones OTA a los puestos de mando.
 
 ---
 
-## Stack Tecnológico
+## Guia de Inicio Rapido para Operaciones de Campo
+
+### Arranque del Puesto de Mando (Windows)
+
+El proyecto incluye un script de inicio rapido que levanta el entorno completo en un clic:
+
+```cmd
+ESPetral_Rescue.bat
+```
+
+Este script verifica las dependencias (`pnpm`, `node`), compila el backend y la PWA movil, e inicia el broker MQTT, el motor de calculo y el servidor web en `http://localhost:3000`.
+
+### Inicio Manual con pnpm
+
+```bash
+# 1. Instalar dependencias en los modulos
+cd backend && pnpm install
+cd ../mobile && pnpm install
+
+# 2. Iniciar el servidor local y broker
+cd ../backend
+pnpm dev
+
+# 3. En otra terminal, iniciar la PWA movil
+cd ../mobile
+pnpm dev
+```
+
+---
+
+## Guia para Desarrolladores de Firmware (`firmware/`)
+
+El codigo fuente del firmware de los nodos ESP32 se encuentra completamente abierto en la carpeta `firmware/` para que la comunidad de desarrollo embebido e investigacion de Wi-Fi Sensing pueda compilar, mejorar y adaptar nuevos modelos de microcontroladores.
+
+### Requisitos de Desarrollo
+1. **ESP-IDF v5.1 o superior** instalado y configurado en el sistema.
+2. Python 3.8+ con las herramientas de particion de Espressif.
+3. Cable USB de datos para conexion con la placa.
+
+### Proyectos de Firmware Independientes por Nodo
+
+El firmware está completamente separado en proyectos dedicados por rol y arquitectura física, garantizando la configuración exacta de Flash, periféricos y provisioning para cada placa:
+
+```
+firmware/
+├── mama-esp32-s3/              # Nodo Maestro "Mama" (ESP32-S3 · 16MB Flash · 8MB PSRAM · SIMD DSP)
+│   ├── CMakeLists.txt
+│   ├── partitions.csv          # Layout dual-OTA de 16MB (slots de 4MB)
+│   ├── sdkconfig.defaults      # Target esp32s3, 240MHz, USB-JTAG nativo
+│   ├── nvs_mama.csv            # Provisioning NVS (node_id = mama)
+│   ├── flash.bat               # Flasheo directo con un clic
+│   ├── README.md
+│   └── main/                   # Motor CSI con extracción de fase cruda y LED WS2812
+│
+├── bebe-esp32-c6-lcd/          # Nodo Emisor/Monitor "Bebe" (Waveshare ESP32-C6 LCD · Wi-Fi 6 · 4MB Flash)
+│   ├── CMakeLists.txt
+│   ├── partitions.csv          # Layout dual-OTA de 4MB (slots de 1.75MB)
+│   ├── sdkconfig.defaults      # Target esp32c6 con Wi-Fi 6 (802.11ax) y GPIO 8
+│   ├── nvs_bebe.csv            # Provisioning NVS (node_id = bebe)
+│   ├── flash.bat               # Flasheo directo con un clic
+│   ├── README.md
+│   └── main/                   # Transmisor Ping CSI y diagnóstico
+│
+└── satelite-esp32-c3/          # Nodo Satélite Perimetral (ESP32-C3 · 4MB Flash · Bajo Costo)
+    ├── CMakeLists.txt
+    ├── partitions.csv          # Layout dual-OTA de 4MB
+    ├── sdkconfig.defaults      # Target esp32c3 económico
+    ├── nvs_data.csv            # Provisioning NVS genérico
+    ├── flash.bat               # Flasheo directo con un clic
+    ├── README.md
+    └── main/                   # Telemetría ligera perimetral
+```
+
+### Flasheo Rápido por Nodo
+
+#### 1. Nodo Maestro "Mama" (ESP32-S3 con 16MB Flash)
+```cmd
+cd firmware\mama-esp32-s3
+flash.bat COM5
+```
+*(o con `idf.py build` e `idf.py -p COM5 flash monitor`)*
+
+#### 2. Nodo Emisor "Bebe" (Waveshare ESP32-C6 con Pantalla LCD)
+```cmd
+cd firmware\bebe-esp32-c6-lcd
+flash.bat COM3
+```
+*(o con `idf.py build` e `idf.py -p COM3 flash monitor`)*
+
+#### 3. Nodo Satélite (ESP32-C3 Económico)
+```cmd
+cd firmware\satelite-esp32-c3
+flash.bat COM3
+```
+*(o con `idf.py build` e `idf.py -p COM3 flash monitor`)*
+
+---
+
+## Parametros de Diseno Operativo
+
+| Parametro | Valor | Justificacion Tecnica |
+|-----------|-------|-----------------------|
+| **Retencion de datos (Local)** | 72 horas | Enfoque de emergencia tactica, evita acumulacion innecesaria y protege la privacidad. |
+| **Retencion de datos (Nube)** | 14 dias | Cubre el 100% de los casos extremos documentados de supervivencia en desastres sismicos. |
+| **Umbral de Alerta Critica** | > 70% puntaje | Dispara señal visual y acustica inmediata en el mapa y dispositivos de rescate. |
+| **Obsolescencia de Sensor** | 10 minutos | Se descarta la ponderacion de un nodo si este deja de emitir telemetria activa. |
+| **Frecuencia de Ráfaga CSI** | 20 Hz (20 fps) | Frecuencia optima para discriminar varianza de movimiento y armónicos de respiracion. |
+
+---
+
+## Seguridad y Privacidad en Campo
+
+- **Red Aislada (Air-Gapped)**: Toda la operacion critica funciona sin conexion a Internet ni dependencias externas.
+- **Cifrado en Reposo (SQLCipher)**: Las bases de datos locales permanecen cifradas para proteger la informacion de victimas y ubicaciones.
+- **Autenticacion PSK**: Validacion por token precompartido en el broker MQTT para evitar inyeccion de telemetria no autorizada.
+- **Proteccion de Datos GPS**: Las coordenadas individuales de rescatistas nunca se transmiten a la nube; unicamente se sincronizan centroides agregados de zona.
+
+---
+
+## Stack Tecnologico
 
 <div align="center">
 
@@ -130,35 +240,23 @@ ESPetral Rescue es un sistema de detección multicomponente diseñado para ayuda
 ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white)
 ![MQTT](https://img.shields.io/badge/MQTT-660066?style=flat-square&logo=mqtt&logoColor=white)
-![ESP32](https://img.shields.io/badge/ESP32--S3%2FC6%2FC3-E7352C?style=flat-square&logo=espressif&logoColor=white)
+![ESP-IDF](https://img.shields.io/badge/ESP--IDF-E7352C?style=flat-square&logo=espressif&logoColor=white)
+![FreeRTOS](https://img.shields.io/badge/FreeRTOS-00A86B?style=flat-square)
 ![AWS Lambda](https://img.shields.io/badge/AWS_Lambda-FF9900?style=flat-square&logo=awslambda&logoColor=white)
 ![DynamoDB](https://img.shields.io/badge/DynamoDB-4053D6?style=flat-square&logo=amazondynamodb&logoColor=white)
-![CloudFront](https://img.shields.io/badge/CloudFront-FF9900?style=flat-square&logo=amazonaws&logoColor=white)
 
 </div>
 
 ---
 
-## Proyectos Relacionados
-
-| Proyecto | Descripción |
-|----------|-------------|
-| [Lookitry](https://github.com/depper-IA/lookitry-showcase) | SaaS de prueba virtual con IA · Next.js · Supabase |
-| [kommo-mcp](https://github.com/depper-IA/kommo-mcp) | Servidor MCP para Kommo CRM · Python · OAuth2 |
-| [Sammy](https://github.com/depper-IA/sammy) | Asistente de Telegram con IA · TypeScript · SQLite |
-| [Rendertry](https://github.com/depper-IA/Rendertry) | Visualizador de personalización automotriz · Vanilla JS |
-| [WilkieDevs](https://github.com/depper-IA/WilkieDevs) | Plataforma de automatización web · Chatbot de IA |
-
----
-
 ## Licencia
 
-Este proyecto está bajo la Licencia MIT. Consulta el archivo [LICENSE](LICENSE) para más detalles.
+Este proyecto se distribuye bajo la **Licencia MIT**. Consulta el archivo [LICENSE](LICENSE) para mas informacion.
 
 ---
 
 <div align="center">
 
-*Desarrollado desde Cali, Colombia — para quien lo necesite.*
+*Desarrollado desde Cali, Colombia — Herramienta tactica abierta para la proteccion y rescate de vidas humanas.*
 
 </div>

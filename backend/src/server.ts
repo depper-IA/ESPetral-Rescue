@@ -14,13 +14,16 @@ import { createServer, type Server } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 import type Database from 'better-sqlite3';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/** Ruta al directorio de archivos estáticos del dashboard */
+/** Ruta al directorio de archivos estáticos de la PWA unificada (mobile/dist) y fallback (public) */
+const MOBILE_DIST_DIR = path.resolve(__dirname, '..', '..', 'mobile', 'dist');
 const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
+const STATIC_DIR = existsSync(MOBILE_DIST_DIR) ? MOBILE_DIST_DIR : PUBLIC_DIR;
 
 /** Puerto por defecto para el servidor HTTP del dashboard */
 export const DEFAULT_PORT = 3000;
@@ -55,7 +58,7 @@ export interface ServerInstance {
   /** Detiene el servidor de forma limpia */
   stop(): Promise<void>;
   /** Envía una actualización de telemetría CSI a todos los clientes del dashboard */
-  broadcastCsiUpdate(zoneId: string, motionProbability: number, nodeId?: string): void;
+  broadcastCsiUpdate(zoneId: string, motionProbability: number, nodeId?: string, rssi?: number): void;
   /** Envía una trama CSI cruda (64 amplitudes de subportadora) al dashboard para visualización */
   broadcastCsiRawUpdate(zoneId: string, nodeId: string, amplitudes: number[], timestamp: string): void;
   /** Envía una nueva zona a todos los clientes del dashboard */
@@ -99,8 +102,8 @@ export function createDashboardServer(options: ServerOptions): ServerInstance {
 
   const app = express();
 
-  // Servir archivos estáticos del dashboard
-  app.use(express.static(PUBLIC_DIR));
+  // Servir PWA unificada (mobile/dist) o dashboard fallback
+  app.use(express.static(STATIC_DIR));
 
   // --- API REST ---
 
@@ -156,12 +159,13 @@ export function createDashboardServer(options: ServerOptions): ServerInstance {
 
   // --- Métodos de broadcast ---
 
-  function broadcastCsiUpdate(zoneId: string, motionProbability: number, nodeId?: string): void {
+  function broadcastCsiUpdate(zoneId: string, motionProbability: number, nodeId?: string, rssi?: number): void {
     const message = JSON.stringify({
       type: 'csi_update',
       zone_id: zoneId,
       motion_probability: motionProbability,
       ...(nodeId && { node_id: nodeId }),
+      ...(typeof rssi === 'number' && { rssi }),
     });
 
     for (const client of wss.clients) {
