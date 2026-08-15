@@ -6,7 +6,7 @@
 Deteccion de movimiento Wi-Fi CSI · Sensor acustico de golpes · Registro GPS · Panel en tiempo real
 Desarrollado en respuesta a la emergencia en Cali, Colombia · Por [Sam Wilkie](https://github.com/depper-IA)
 
-[![Licencia](https://img.shields.io/badge/Licencia-MIT-green?style=flat-square)](LICENSE)
+[![Licencia](https://img.shields.io/badge/Licencia-Apache%202.0-blue?style=flat-square)](LICENSE)
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-5.x-red?style=flat-square&logo=espressif&logoColor=white)](https://docs.espressif.com/projects/esp-idf)
 [![Node.js](https://img.shields.io/badge/Node.js-20.x-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -318,7 +318,7 @@ flash.bat COM3
 
 ## Licencia
 
-Este proyecto se distribuye bajo la **Licencia MIT**. Consulta el archivo [LICENSE](LICENSE) para mas informacion.
+Este proyecto se distribuye bajo la **Licencia Apache 2.0**. Esto significa que podes usarlo, modificarlo y distribuirlo libremente — incluso en contextos institucionales o comerciales — siempre que mantengas el aviso de copyright original. Consulta el archivo [LICENSE](LICENSE) y el archivo [NOTICE](NOTICE) para mas informacion.
 
 ---
 
