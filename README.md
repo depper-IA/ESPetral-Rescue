@@ -32,6 +32,13 @@ ESPetral Rescue es un sistema de deteccion multicomponente disenado para ayudar 
 │  Nodos ESP32 (Mama S3 / Bebe C6 LCD / Satelite C3)                     │
 │  - Captura CSI a 20 fps / Fase cruda OFDM / LED de alerta / LCD local   │
 └────────────────────────────────────┬────────────────────────────────────┘
+                                     │ Wi-Fi 2.4 GHz (SSID: Tenda_542FE0)
+┌────────────────────────────────────▼────────────────────────────────────┐
+│  ROUTER PORTATIL TENDA N301 (Infraestructura de Red Local)              │
+│  - AP dedicado 2.4 GHz con antenas de 5 dBi para mayor penetracion      │
+│  - DHCP estatico para nodos ESP32 y portatil de campo                   │
+│  - Alimentacion por adaptador DC 9V / cable step-up desde powerbank     │
+└────────────────────────────────────┬────────────────────────────────────┘
                                      │ MQTT (TCP 1883 / PSK)
 ┌────────────────────────────────────▼────────────────────────────────────┐
 │  PUESTO DE MANDO LOCAL (PORTATIL DE CAMPO)                              │
@@ -49,6 +56,21 @@ ESPetral Rescue es un sistema de deteccion multicomponente disenado para ayudar 
 │  - Registro GPS cifrado (AES-GCM) y mapa tactico offline                │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Infraestructura de Red Local: Router Tenda N301 Portatil
+
+Uno de los aprendizajes criticos del despliegue fue que **la conectividad Wi-Fi no puede depender del propio ESP32 ni del telefono de un rescatista**. Se decidio usar un router portatil Tenda N301 como punto de acceso dedicado por las siguientes razones tecnicas:
+
+| Alternativa Evaluada | Problema Identificado | Veredicto |
+|----------------------|-----------------------|-----------|
+| **SoftAP embebido en el ESP32** | Con 3 o mas nodos transmitiendo rafagas CSI a 20 Hz simultaneamente, el stack Wi-Fi del ESP32 en modo AP satura sus buffers internos (limitacion de la pila lwIP de ESP-IDF). Se producen perdidas de paquetes MQTT, desconexiones erraticas y corrupcion del flujo CSI que invalida el analisis. | Descartado |
+| **Hotspot movil del telefono del rescatista** | El hotspot de un celular en modo AP consume aproximadamente el doble de bateria del dispositivo. En una operacion de campo de 8-12 horas, esto obligaria a reemplazar o cargar constantemente el telefono del rescatista, generando interrupciones criticas. Ademas, el modo AP en Android/iOS aísla clientes entre si por defecto, impidiendo la comunicacion directa ESP32 ↔ laptop. | Descartado |
+| **Router Tenda N301 Portatil** | AP 2.4 GHz dedicado con 2 antenas externas omnidireccionales de 5 dBi (802.11n, 300 Mbps). Soporta hasta 20-25 clientes simultaneos. Se alimenta con DC 9V via adaptador o cable step-up desde powerbank externo, sin afectar la bateria de los rescatistas. Mayor alcance y penetracion en escombros que la antena PCB del ESP32. | **Adoptado** |
+
+**SSID de campo**: `Tenda_542FE0` — **IP del puesto de mando (broker MQTT)**: `192.168.0.100`
+
+> [!IMPORTANT]
+> El router Tenda debe encenderse **antes** de flashear o reiniciar los nodos ESP32. Las credenciales de red estan preaprovisionadas en la particion NVS de cada nodo (`nvs_mama.csv`, `nvs_bebe.csv`). Si se cambia el router o el SSID, se debe re-flashear la particion NVS con los nuevos parametros.
 
 ### Motor de Puntuacion Compuesta por Zona
 
@@ -73,6 +95,7 @@ El sistema cuenta con soporte de hardware desplegable en campo, validado en labo
 | <img src="images/fotos (1).jpeg" width="280" alt="Waveshare ESP32-C6-LCD-1.47" /> | **Nodo C6 con Pantalla** | **Waveshare ESP32-C6-LCD-1.47**<br>· CPU RISC-V 32-bit @ 160 MHz<br>· Wi-Fi 6 (802.11ax) + BLE 5<br>· Pantalla LCD IPS 1.47" (ST7789)<br>· Ranura MicroSD/TF y USB-C | **Nodo de Monitoreo y Diagnostico Perimetral**<br>Permite a los rescatistas inspeccionar in situ el estado de la red, canal de radio, ráfagas CSI e intensidad de señal directamente en la pantalla integrada, sin necesidad de abrir una laptop o teléfono. |
 | <img src="images/fotos (2).jpeg" width="280" alt="Par Transmisor-Receptor ESP32-C6 y ESP32-S3" /> | **Par Transmisor-Receptor** | **Banco de Pruebas Tx-Rx**<br>· Nodo C6 LCD (Activo en transmision)<br>· Nodo S3 N16R8 (Receptor CSI) | **Enlace de Ping CSI a traves de Escombros**<br>Demostracion de captura activa donde un nodo emite ráfagas continuas de paquetes CSI a 20 Hz y el nodo receptor procesa la perturbacion de fase y amplitud ocasionada por respiracion o movimiento bajo escombros. |
 | <img src="images/fotos (3).jpeg" width="280" alt="ESP32-S3 DevKit N16R8" /> | **Nodo S3 de Alto Rendimiento** | **ESP32-S3-DevKitC-1 (ESP32-S3-N16R8)**<br>· CPU Xtensa Dual-Core @ 240 MHz (SIMD/DSP)<br>· 16 MB Octal Flash + 8 MB Octal PSRAM<br>· Doble USB-C (UART / USB OTG nativo)<br>· LED RGB WS2812 programable | **Nodo Principal de Procesamiento CSI (Maestro / Mama)**<br>Ejecuta el procesamiento pesado de señal: desempaquetado de fase cruda `atan2f(Q,I)` de 64 subportadoras, calculo de varianza matricial, búfer circular de contingencia MQTT y semaforizacion visual LED con histéresis. |
+| <img src="images/router.jpeg" width="280" alt="Router Tenda N301 Portatil" /> | **Punto de Acceso Local** | **Router Tenda N301 Portatil**<br>· Banda 2.4 GHz (802.11n), 300 Mbps<br>· 2 antenas externas fijas de 5 dBi<br>· Alimentacion DC 9V 0.6A (barrel jack)<br>· Hasta 20-25 clientes simultaneos<br>· SSID de campo: `Tenda_542FE0` | **Columna Vertebral de la Red Local Air-Gapped**<br>Provee conectividad Wi-Fi estable y dedicada para todos los nodos ESP32 y el portatil de campo, sin depender de la bateria de los rescatistas ni del stack AP limitado del ESP32. Soporta multiples clientes MQTT simultaneos bajo carga de rafagas CSI a 20 Hz sin perdida de paquetes. |
 
 ---
 
